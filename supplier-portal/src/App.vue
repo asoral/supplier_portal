@@ -1,25 +1,46 @@
 <script setup>
-// import HelloWorld from './components/HelloWorld.vue'
-import Home from './components/Home.vue';
+import Navbar from './components/Navbar.vue'
 </script>
 
 <template>
- 
-  <!-- <HelloWorld msg="Vite + Vue" /> -->
-  <Home />
+  <div class="min-h-screen bg-slate-50 flex flex-col">
+    <Navbar />
+    <main class="flex-grow">
+      <router-view v-slot="{ Component }">
+        <transition name="fade" mode="out-in">
+          <component :is="Component" />
+        </transition>
+      </router-view>
+    </main>
+    <footer class="bg-white border-t border-gray-200 py-8">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div class="flex flex-col md:flex-row justify-between items-center">
+          <div class="mb-4 md:mb-0">
+             <span class="text-xl font-bold text-gray-900">TenderFlow</span>
+             <p class="text-sm text-gray-500 mt-1">Next-Gen Procurement Portal</p>
+          </div>
+          <div class="flex space-x-6 text-sm text-gray-500">
+            <a href="#" class="hover:text-indigo-600">Privacy Policy</a>
+            <a href="#" class="hover:text-indigo-600">Terms of Service</a>
+            <a href="#" class="hover:text-indigo-600">Contact Support</a>
+          </div>
+          <div class="mt-4 md:mt-0 text-sm text-gray-400">
+            &copy; 2024 TenderFlow. All rights reserved.
+          </div>
+        </div>
+      </div>
+    </footer>
+  </div>
 </template>
 
 <style scoped>
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
 }
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #42b883aa);
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

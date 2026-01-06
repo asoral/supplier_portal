@@ -242,4 +242,7 @@ app_license = "mit"
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
-website_route_rules = [{'from_route': '/supplier-portal/<path:app_path>', 'to_route': 'supplier-portal'},]
+website_route_rules = [
+	{'from_route': '/supplier-portal/<path:app_path>', 'to_route': 'supplier-portal'},
+	{'from_route': '/supplier-portal', 'to_route': 'supplier-portal'},
+]

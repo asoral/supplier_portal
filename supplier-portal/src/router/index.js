@@ -1,90 +1,85 @@
-import { createRouter, createWebHistory, createWebHashHistory } from "vue-router";
-import HelloWorld from "../components/HelloWorld.vue";
+import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
   {
-	path: "/",
-	name: "HelloWorld",
-	component: HelloWorld,
-  },
-//   {
-// path: "/Home",
-// 	name: "Home",
-// 	component: Home,
-//   },
-//   {
-//     path: '/signup',
-//     name: 'Signup',
-//     component: () => import('@/views/Signup.vue')
-//   },
-  {
-    path: '/Home',
+    path: '/',
     name: 'Home',
-    component: () => import('@/components/Home.vue')
+    component: () => import('../pages/Home.vue')
+  },
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('../pages/Login.vue')
+  },
+  {
+    path: '/register',
+    name: 'Register',
+    component: () => import('../pages/Register.vue')
+  },
+  {
+    path: '/tenders',
+    name: 'Tenders',
+    component: () => import('../pages/Tenders.vue')
+  },
+  {
+    path: '/tenders/:id',
+    name: 'TenderDetail',
+    component: () => import('../pages/TenderDetail.vue')
+  },
+  {
+    path: '/contracts',
+    name: 'Contracts',
+    component: () => import('../pages/Contracts.vue')
+  },
+  {
+    path: '/dashboard',
+    name: 'Dashboard',
+    component: () => import('../pages/Dashboard.vue')
+  },
+  {
+    path: '/saved-tenders',
+    name: 'SavedTenders',
+    component: () => import('../pages/SavedTenders.vue')
+  },
+  {
+    path: '/invoices',
+    name: 'Invoices',
+    component: () => import('../pages/Invoices.vue')
+  },
+  {
+    path: '/documents',
+    name: 'Documents',
+    component: () => import('../pages/Documents.vue')
+  },
+  {
+    path: '/integrations',
+    name: 'Integrations',
+    component: () => import('../pages/Integrations.vue')
+  },
+  {
+    path: '/catalog',
+    name: 'Catalog',
+    component: () => import('../pages/Catalog.vue')
+  },
+  {
+    path: '/deliveries',
+    component: () => import('../pages/Deliveries.vue')
+  },
+  {
+    path: '/queries',
+    name: 'Queries',
+    component: () => import('../pages/Queries.vue')
+  },
+  {
+    path: '/help',
+    name: 'Help',
+    component: () => import('../pages/Help.vue')
   }
-//   ,
-//   {
-//     path: '/CustomerRegistration',
-//     name: 'CustomerRegistration',
-//     component: () => import('@/components/CustomerRegistration.vue')
-//   },
-//   {
-//     path: '/EmployeeRegistration',
-//     name: 'EmployeeRegistration',
-//     component: () => import('@/components/EmployeeRegistration.vue')
-//   },
-//   {
-//     path: '/Catalog',
-//     name: 'Catalog',
-//     component: () => import('@/components/Catalog.vue')
-//   },
-//   {
-//     path: '/Dashboard',
-//     name: 'Dashboard',
-//     component: () => import('@/components/Dashboard.vue')
-//   },
-//   {
-//     path: '/Orders',
-//     name: 'Orders',
-//     component: () => import('@/components/Orders.vue')
-//   },
-//   {
-//     path: '/Quotations',
-//     name: 'Quotations',
-//     component: () => import('@/components/Quotations.vue')
-//   },
-//   {
-//     path: '/Invoices',
-//     name: 'Invoices',
-//     component: () => import('@/components/Invoices.vue')
-//   },
-//   {
-//     path: '/Returns',
-//     name: 'Returns',
-//     component: () => import('@/components/Returns.vue')
-//   },
-//   {
-//     path: '/MyAccount',
-//     name: 'MyAccount',
-//     component: () => import('@/components/MyAccount.vue')
-//   },
-//   {
-//     path: '/Analytics',
-//     name: 'Analytics',
-//     component: () => import('@/components/Analytics.vue')
-//   },
-//   {
-//     path: '/Support',
-//     name: 'Support',
-//     component: () => import('@/components/Support.vue')
-//   },
-// ,  
-//   ...authRoutes,
-];
+]
 
 const router = createRouter({
-	history: createWebHistory("/supplier-portal"),
-	routes,
+  history: createWebHistory('/supplier-portal'),
+  routes
 })
 
-export default router;
+export default router
