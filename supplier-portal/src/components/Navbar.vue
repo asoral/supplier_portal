@@ -1,17 +1,24 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Menu, X, Bell, User, ChevronDown, FileText, FileCode, Webhook, HelpCircle, Package, Truck, MessageSquare, Bookmark } from 'lucide-vue-next'
+import { Menu, X, Bell, User, ChevronDown, FileText, FileCode, Webhook, HelpCircle, Package, Truck, MessageSquare, Bookmark, LogOut, Settings, LayoutDashboard } from 'lucide-vue-next'
+import { useAuth } from '../auth.js'
 
 const router = useRouter()
+const { isLoggedIn, logout, state } = useAuth()
 const isOpen = ref(false)
-const isLoggedIn = ref(false) // TODO: Connect to auth store
+const isProfileOpen = ref(false)
 
-const navigation = [
+const guestNavigation = [
   { name: 'Home', href: '/' },
   { name: 'Active Tenders', href: '/tenders' },
-  { name: 'Saved', href: '/saved-tenders' },
-  { name: 'Contracts', href: '/contracts' },
+]
+
+const userNavigation = [
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Tenders', href: '/tenders', icon: FileText },
+  { name: 'Saved', href: '/saved-tenders', icon: Bookmark },
+  { name: 'Contracts', href: '/contracts', icon: FileCode },
 ]
 
 const moreNavigation = [
@@ -34,53 +41,64 @@ const iconMap = {
   HelpCircle
 }
 
+const activeNavigation = computed(() => {
+  return isLoggedIn.value ? userNavigation : guestNavigation
+})
+
 const toggleMenu = () => {
   isOpen.value = !isOpen.value
+}
+
+const handleLogout = () => {
+  logout()
+  isProfileOpen.value = false
+  router.push('/login')
 }
 </script>
 
 <template>
-  <nav class="sticky top-0 z-50 w-full border-b border-gray-200 bg-white/80 backdrop-blur-md">
+  <nav class="sticky top-0 z-50 w-full border-b border-gray-100 bg-white">
     <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
       <div class="flex h-16 justify-between items-center">
         <!-- Logo -->
-        <div class="flex items-center cursor-pointer" @click="router.push('/')">
-          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
+        <div class="flex items-center cursor-pointer gap-2" @click="router.push('/')">
+          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 shadow-sm">
             <span class="text-xl font-bold text-white">T</span>
           </div>
-          <span class="ml-2 text-xl font-bold text-gray-900">TenderFlow</span>
+          <span class="text-lg font-bold text-gray-900 tracking-tight">TenderFlow</span>
         </div>
 
         <!-- Desktop Navigation -->
-        <div class="hidden md:flex md:items-center md:space-x-8">
+        <div class="hidden md:flex md:items-center md:gap-8">
           <router-link
-            v-for="item in navigation"
+            v-for="item in activeNavigation"
             :key="item.name"
             :to="item.href"
-            class="text-sm font-medium text-gray-700 hover:text-indigo-600 transition-colors flex items-center gap-2"
-            active-class="text-indigo-600"
+            class="text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors flex items-center gap-2"
+            active-class="text-indigo-600 font-semibold bg-indigo-50 px-3 py-1.5 rounded-md"
           >
              <component v-if="item.name === 'Saved'" :is="Bookmark" class="h-4 w-4" />
+             <component v-if="item.name === 'Dashboard'" :is="LayoutDashboard" class="h-4 w-4" />
             {{ item.name }}
           </router-link>
 
-          <!-- More Dropdown -->
-          <div class="relative group">
-            <button class="flex items-center gap-1 text-sm font-medium text-gray-700 hover:text-indigo-600 focus:outline-none transition-colors">
+          <!-- More Dropdown (Only for logged in users) -->
+          <div v-if="isLoggedIn" class="relative group">
+            <button class="flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-gray-900 focus:outline-none transition-colors">
               More <ChevronDown class="h-4 w-4" />
             </button>
-            <div class="absolute left-0 mt-2 w-56 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-               <div class="py-1">
+            <div class="absolute left-0 mt-2 w-56 origin-top-right rounded-xl bg-white shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden transform group-hover:translate-y-0 translate-y-2">
+               <div class="p-1">
                   <router-link 
                      v-for="item in moreNavigation" 
                      :key="item.name"
                      :to="item.href"
-                     class="group flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-indigo-600"
+                     class="group flex items-center px-4 py-2.5 text-sm text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition-colors"
                      @click="isOpen = false"
                   >
                      <component 
                         :is="iconMap[item.icon] || Package" 
-                        class="mr-3 h-4 w-4 text-gray-400 group-hover:text-indigo-600" 
+                        class="mr-3 h-4 w-4 text-gray-400 group-hover:text-indigo-600 transition-colors" 
                      />
                      {{ item.name }}
                   </router-link>
@@ -90,32 +108,70 @@ const toggleMenu = () => {
         </div>
 
         <!-- Desktop Auth Buttons -->
-        <div class="hidden md:flex md:items-center md:space-x-4">
+        <div class="hidden md:flex md:items-center md:gap-4">
           <template v-if="!isLoggedIn">
             <button 
               @click="router.push('/login')"
-              class="text-sm font-medium text-gray-700 hover:text-indigo-600 transition-colors"
+              class="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors px-3 py-2"
             >
               Sign In
             </button>
             <button
               @click="router.push('/register')"
-              class="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-all hover:scale-105 active:scale-95"
+              class="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-all hover:shadow-md"
             >
               Register as Vendor
             </button>
           </template>
           <template v-else>
-             <button class="p-2 text-gray-400 hover:text-gray-500">
-              <Bell class="h-6 w-6" />
+             <button class="p-2 text-gray-400 hover:text-gray-600 transition-colors relative">
+              <Bell class="h-5 w-5" />
+              <span class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"></span>
             </button>
-            <button 
-              @click="router.push('/dashboard')"
-              class="flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1.5 hover:bg-gray-200 transition-colors"
-            >
-              <User class="h-5 w-5 text-gray-600" />
-              <span class="text-sm font-medium text-gray-700">Dashboard</span>
-            </button>
+            
+            <!-- User Profile Dropdown -->
+            <div class="relative ml-2">
+               <button 
+                  @click="isProfileOpen = !isProfileOpen" 
+                  class="flex items-center gap-3 rounded-full hover:bg-gray-50 p-1 pr-3 transition-colors border border-transparent hover:border-gray-200"
+               >
+                  <div class="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-semibold border border-indigo-200">
+                     {{ state.user?.name?.charAt(0) || 'U' }}
+                  </div>
+                  <div class="flex flex-col items-start">
+                     <span class="text-sm font-medium text-gray-700 leading-none">{{ state.user?.name || 'User' }}</span>
+                     <span class="text-xs text-gray-500 leading-none mt-1">{{ state.user?.company || 'Company' }}</span>
+                  </div>
+                  <ChevronDown class="h-3 w-3 text-gray-400" />
+               </button>
+
+               <div v-if="isProfileOpen" class="absolute right-0 mt-2 w-56 origin-top-right rounded-xl bg-white shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none z-50 overflow-hidden" @click.away="isProfileOpen = false">
+                   <div class="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                     <p class="text-sm leading-5 font-medium text-gray-900 truncate">{{ state.user?.name }}</p>
+                     <p class="text-xs leading-4 text-gray-500 truncate">{{ state.user?.email }}</p>
+                   </div>
+                   <div class="p-1">
+                     <router-link to="/profile" class="group flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg">
+                        <User class="mr-3 h-4 w-4 text-gray-400 group-hover:text-indigo-600" />
+                        My Profile
+                     </router-link>
+                     <router-link to="/dashboard" class="group flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg">
+                        <LayoutDashboard class="mr-3 h-4 w-4 text-gray-400 group-hover:text-indigo-600" />
+                        Dashboard
+                     </router-link>
+                     <router-link to="/profile" class="group flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg">
+                        <Settings class="mr-3 h-4 w-4 text-gray-400 group-hover:text-indigo-600" />
+                        Settings
+                     </router-link>
+                   </div>
+                   <div class="p-1 border-t border-gray-100">
+                     <button @click="handleLogout" class="group flex w-full items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg">
+                        <LogOut class="mr-3 h-4 w-4 text-red-600" />
+                        Sign Out
+                     </button>
+                   </div>
+               </div>
+            </div>
           </template>
         </div>
 
@@ -123,7 +179,7 @@ const toggleMenu = () => {
         <div class="flex items-center md:hidden">
           <button 
             @click="toggleMenu"
-            class="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            class="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 focus:outline-none"
           >
             <Menu v-if="!isOpen" class="block h-6 w-6" />
             <X v-else class="block h-6 w-6" />
@@ -133,41 +189,62 @@ const toggleMenu = () => {
     </div>
 
     <!-- Mobile menu -->
-    <div v-show="isOpen" class="md:hidden bg-white border-b border-gray-200">
-      <div class="space-y-1 px-2 pb-3 pt-2 sm:px-3">
+    <div v-show="isOpen" class="md:hidden bg-white border-b border-gray-200 shadow-lg">
+      <div class="space-y-1 px-4 pb-4 pt-2">
         <router-link
-          v-for="item in navigation"
+          v-for="item in activeNavigation"
           :key="item.name"
           :to="item.href"
-          class="block rounded-md px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600"
+          class="block rounded-lg px-3 py-2 text-base font-medium text-gray-600 hover:bg-indigo-50 hover:text-indigo-600"
+          active-class="bg-indigo-50 text-indigo-600"
           @click="isOpen = false"
         >
-          {{ item.name }}
+          <div class="flex items-center gap-3">
+             <component v-if="item.icon" :is="item.icon" class="h-5 w-5" />
+             {{ item.name }}
+          </div>
         </router-link>
-        <template v-if="!isLoggedIn">
-           <router-link
-            to="/login"
-            class="block rounded-md px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600"
-            @click="isOpen = false"
-          >
-            Sign In
-          </router-link>
-           <router-link
-            to="/register"
-            class="block rounded-md px-3 py-2 text-base font-medium text-indigo-600 hover:bg-indigo-50"
-            @click="isOpen = false"
-          >
-            Register as Vendor
-          </router-link>
+        
+        <template v-if="isLoggedIn">
+           <div class="border-t border-gray-100 my-2 pt-2">
+              <p class="px-3 text-xs font-semibold text-gray-400 uppercase mb-2">More</p>
+              <router-link
+                 v-for="item in moreNavigation"
+                 :key="item.name"
+                 :to="item.href"
+                 class="block rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-indigo-50 hover:text-indigo-600"
+                 @click="isOpen = false"
+              >
+                  <div class="flex items-center gap-3">
+                     <component :is="iconMap[item.icon]" class="h-4 w-4" />
+                     {{ item.name }}
+                  </div>
+              </router-link>
+           </div>
+           <div class="border-t border-gray-100 my-2 pt-2">
+              <button @click="handleLogout" class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-base font-medium text-red-600 hover:bg-red-50">
+                 <LogOut class="h-5 w-5" />
+                 Sign Out
+              </button>
+           </div>
         </template>
         <template v-else>
-          <router-link
-            to="/dashboard"
-            class="block rounded-md px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600"
-            @click="isOpen = false"
-          >
-            Dashboard
-          </router-link>
+           <div class="mt-4 grid grid-cols-2 gap-3">
+            <router-link
+               to="/login"
+               class="flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+               @click="isOpen = false"
+            >
+               Sign In
+            </router-link>
+            <router-link
+               to="/register"
+               class="flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-indigo-500"
+               @click="isOpen = false"
+            >
+               Register
+            </router-link>
+           </div>
         </template>
       </div>
     </div>

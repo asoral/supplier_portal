@@ -1,17 +1,27 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Search, Filter, LayoutGrid, List, X, Bell, Bookmark } from 'lucide-vue-next'
+import { useRoute } from 'vue-router'
 import TenderCard from '../components/TenderCard.vue'
 
+const route = useRoute()
 const searchQuery = ref('')
 const viewMode = ref('grid') // 'grid' | 'list'
 const priceRange = ref(5000000)
+const sortBy = ref('Deadline (Soonest)')
 
 // Filters
 const selectedCategory = ref('All')
 const selectedStatus = ref('All')
 const selectedPriority = ref('All')
 const liveBiddingOnly = ref(false)
+
+onMounted(() => {
+  if (route.query.category) {
+    selectedCategory.value = route.query.category
+  }
+})
+
 
 const categories = [
   { name: 'All', count: 6 },
@@ -38,7 +48,7 @@ const tenders = ref([
     priority: 'High',
     liveBidding: true,
     budget: 2500000,
-    deadline: '15 Feb 2024',
+    deadline: '2024-02-15',
     location: 'Pune, MH',
     bids: 12
   },
@@ -51,7 +61,7 @@ const tenders = ref([
     priority: 'Urgent',
     liveBidding: false,
     budget: 850000,
-    deadline: '10 Feb 2024',
+    deadline: '2024-02-10',
     location: 'Mumbai, MH',
     bids: 8
   },
@@ -64,7 +74,7 @@ const tenders = ref([
     priority: 'Normal',
     liveBidding: false,
     budget: 1200000,
-    deadline: '20 Feb 2024',
+    deadline: '2024-02-20',
     location: 'Delhi, NCR',
     bids: 5
   },
@@ -77,7 +87,7 @@ const tenders = ref([
     priority: 'High',
     liveBidding: true,
     budget: 4500000,
-    deadline: '25 Jan 2024',
+    deadline: '2024-01-25',
     location: 'Bangalore, KA',
     bids: 15
   },
@@ -90,21 +100,42 @@ const tenders = ref([
     priority: 'Normal',
     liveBidding: false,
     budget: 320000,
-    deadline: '15 Mar 2024',
+    deadline: '2024-03-15',
     location: 'Chennai, TN',
     bids: 3
   }
 ])
 
 const filteredTenders = computed(() => {
-  return tenders.value.filter(tender => {
+  let result = tenders.value.filter(tender => {
     const matchesSearch = tender.title.toLowerCase().includes(searchQuery.value.toLowerCase()) || 
                           tender.id.toLowerCase().includes(searchQuery.value.toLowerCase())
     const matchesCategory = selectedCategory.value === 'All' || tender.category === selectedCategory.value
     const matchesStatus = selectedStatus.value === 'All' || tender.status === selectedStatus.value
-    // Budget filter logic could be added here
+    const matchesPriority = selectedPriority.value === 'All' || tender.priority === selectedPriority.value
+    const matchesBudget = tender.budget <= priceRange.value
+    const matchesLive = !liveBiddingOnly.value || tender.liveBidding
     
-    return matchesSearch && matchesCategory && matchesStatus
+    return matchesSearch && matchesCategory && matchesStatus && matchesPriority && matchesBudget && matchesLive
+  })
+
+  // Sorting
+  return result.sort((a, b) => {
+    switch (sortBy.value) {
+      case 'Deadline (Soonest)':
+        return new Date(a.deadline) - new Date(b.deadline)
+      case 'Deadline (Latest)':
+        return new Date(b.deadline) - new Date(a.deadline)
+      case 'Budget (Low to High)':
+        return a.budget - b.budget
+      case 'Budget (High to Low)':
+        return b.budget - a.budget
+      case 'Most Bids':
+        return b.bids - a.bids
+      default:
+        // Recently Added (simulated by ID desc)
+        return b.id.localeCompare(a.id)
+    }
   })
 })
 
@@ -114,6 +145,8 @@ const clearFilters = () => {
    selectedPriority.value = 'All'
    liveBiddingOnly.value = false
    searchQuery.value = ''
+   priceRange.value = 5000000
+   sortBy.value = 'Deadline (Soonest)'
 }
 </script>
 
@@ -247,10 +280,13 @@ const clearFilters = () => {
                />
             </div>
             <div class="flex items-center gap-2">
-               <select class="block w-full rounded-md border-0 py-2 pl-3 pr-8 text-gray-900 ring-1 ring-inset ring-gray-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 shadow-sm">
-                  <option>Deadline: Soonest</option>
-                  <option>Value: Low to High</option>
-                  <option>Value: High to Low</option>
+               <select v-model="sortBy" class="block w-full rounded-md border-0 py-2 pl-3 pr-8 text-gray-900 ring-1 ring-inset ring-gray-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 shadow-sm">
+                  <option>Deadline (Soonest)</option>
+                  <option>Deadline (Latest)</option>
+                  <option>Budget (High to Low)</option>
+                  <option>Budget (Low to High)</option>
+                  <option>Most Bids</option>
+                  <option>Recently Added</option>
                </select>
                <div class="flex items-center rounded-md bg-white shadow-sm ring-1 ring-inset ring-gray-200">
                   <button 
@@ -272,13 +308,22 @@ const clearFilters = () => {
          </div>
 
          <!-- Active Filters Chips -->
-         <div v-if="selectedCategory !== 'All' || selectedStatus !== 'All'" class="flex items-center gap-2 mb-6 text-sm">
+         <div v-if="selectedCategory !== 'All' || selectedStatus !== 'All' || selectedPriority !== 'All' || priceRange < 20000000 || liveBiddingOnly" class="flex items-center gap-2 mb-6 text-sm flex-wrap">
             <span class="text-gray-500">Active filters:</span>
             <span v-if="selectedCategory !== 'All'" class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
                {{ selectedCategory }} <button @click="selectedCategory = 'All'" class="hover:text-indigo-900"><X class="h-3 w-3" /></button>
             </span>
              <span v-if="selectedStatus !== 'All'" class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
                {{ selectedStatus }} <button @click="selectedStatus = 'All'" class="hover:text-indigo-900"><X class="h-3 w-3" /></button>
+            </span>
+             <span v-if="selectedPriority !== 'All'" class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
+               {{ selectedPriority }} <button @click="selectedPriority = 'All'" class="hover:text-indigo-900"><X class="h-3 w-3" /></button>
+            </span>
+             <span v-if="priceRange < 20000000" class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
+               < ₹{{ (priceRange/100000).toFixed(1) }}L <button @click="priceRange = 20000000" class="hover:text-indigo-900"><X class="h-3 w-3" /></button>
+            </span>
+             <span v-if="liveBiddingOnly" class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
+               Live Bidding <button @click="liveBiddingOnly = false" class="hover:text-indigo-900"><X class="h-3 w-3" /></button>
             </span>
             <button @click="clearFilters" class="text-xs text-gray-500 hover:text-gray-900 underline">Clear all</button>
          </div>

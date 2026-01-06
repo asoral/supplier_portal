@@ -1,6 +1,9 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { Search, Bookmark, Clock, Bell, ArrowRight, Eye } from 'lucide-vue-next'
+
+const router = useRouter()
 
 const stats = [
   { name: 'Total Saved', value: '4', icon: Bookmark, color: 'text-indigo-600', bg: 'bg-indigo-50' },
@@ -175,10 +178,10 @@ const filteredTenders = computed(() => {
                  <button class="p-2 text-red-400 hover:text-red-600 bg-gray-50 rounded-md hover:bg-red-50">
                     <Bookmark class="h-4 w-4 fill-current" />
                  </button>
-                 <button class="inline-flex items-center gap-1 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
+                 <button @click="$router.push('/tenders/' + tender.id)" class="inline-flex items-center gap-1 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
                     <Eye class="h-4 w-4" /> View
                  </button>
-                 <button v-if="tender.status !== 'Closed'" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                 <button v-if="tender.status !== 'Closed'" @click="$router.push('/tenders/' + tender.id)" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
                     Place Bid
                  </button>
              </div>

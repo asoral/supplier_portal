@@ -77,8 +77,8 @@ const formattedBudget = computed(() => {
        </div>
 
       <div class="mt-4 flex gap-2 z-10 relative">
-          <button class="flex-1 rounded-md bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-600 shadow-sm hover:bg-indigo-100">View Details</button>
-          <button class="flex-1 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">View & Bid</button>
+          <router-link :to="`/tenders/${tender.id}`" class="flex-1 flex items-center justify-center rounded-md bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-600 shadow-sm hover:bg-indigo-100">View Details</router-link>
+          <router-link :to="`/tenders/${tender.id}`" class="flex-1 flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">View & Bid</router-link>
       </div>
 
     </div>
