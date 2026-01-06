@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Menu, X, Bell, User, ChevronDown, FileText, FileCode, Webhook, HelpCircle, Package, Truck, MessageSquare, Bookmark, LogOut, Settings, LayoutDashboard } from 'lucide-vue-next'
 import { useAuth } from '../auth.js'
@@ -8,6 +8,26 @@ const router = useRouter()
 const { isLoggedIn, logout, state } = useAuth()
 const isOpen = ref(false)
 const isProfileOpen = ref(false)
+const isNotificationsOpen = ref(false)
+const notificationRef = ref(null)
+const profileRef = ref(null)
+
+const closeDropdowns = (e) => {
+  if (isNotificationsOpen.value && notificationRef.value && !notificationRef.value.contains(e.target)) {
+    isNotificationsOpen.value = false
+  }
+  if (isProfileOpen.value && profileRef.value && !profileRef.value.contains(e.target)) {
+    isProfileOpen.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeDropdowns)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeDropdowns)
+})
 
 const guestNavigation = [
   { name: 'Home', href: '/' },
@@ -124,13 +144,94 @@ const handleLogout = () => {
             </button>
           </template>
           <template v-else>
-             <button class="p-2 text-gray-400 hover:text-gray-600 transition-colors relative">
-              <Bell class="h-5 w-5" />
-              <span class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"></span>
-            </button>
+            <!-- Notifications Dropdown -->
+            <div class="relative" ref="notificationRef">
+               <button 
+                  @click="isNotificationsOpen = !isNotificationsOpen" 
+                  class="p-2 text-gray-400 hover:text-gray-600 transition-colors relative rounded-full hover:bg-gray-100 focus:outline-none"
+               >
+                  <Bell class="h-5 w-5" />
+                  <span class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"></span>
+               </button>
+
+               <div v-if="isNotificationsOpen" class="absolute right-0 mt-2 w-80 origin-top-right rounded-xl bg-white shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none z-50 overflow-hidden">
+                  <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                     <h3 class="text-sm font-semibold text-gray-900">Notifications</h3>
+                     <span class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/20">2 new</span>
+                  </div>
+                  <div class="max-h-96 overflow-y-auto">
+                     <div class="divide-y divide-gray-100">
+                        <!-- Item 1 -->
+                        <div class="p-4 hover:bg-gray-50 transition-colors cursor-pointer relative group">
+                           <div class="flex items-start gap-3">
+                              <div class="flex-shrink-0 mt-0.5">
+                                 <span class="inline-flex items-center justify-center h-2 w-2 rounded-full bg-blue-600 ring-2 ring-white absolute left-3 top-5"></span>
+                              </div>
+                              <div class="flex-grow">
+                                 <div class="flex items-center justify-between mb-1">
+                                    <span class="inline-flex items-center rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">Bid</span>
+                                    <span class="text-xs text-gray-400">7m ago</span>
+                                 </div>
+                                 <p class="text-sm font-semibold text-gray-900 mb-0.5">Outbid Alert</p>
+                                 <p class="text-xs text-gray-500 leading-snug">Your bid on 'Industrial Steel Plates' has been outbid. Current lowest: ₹32,80,000</p>
+                              </div>
+                           </div>
+                        </div>
+
+                        <!-- Item 2 -->
+                        <div class="p-4 hover:bg-gray-50 transition-colors cursor-pointer relative group">
+                           <div class="flex items-start gap-3">
+                              <div class="flex-shrink-0 mt-0.5">
+                                 <span class="inline-flex items-center justify-center h-2 w-2 rounded-full bg-blue-600 ring-2 ring-white absolute left-3 top-5"></span>
+                              </div>
+                              <div class="flex-grow">
+                                 <div class="flex items-center justify-between mb-1">
+                                    <span class="inline-flex items-center rounded-md bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700 ring-1 ring-inset ring-green-600/20">Order</span>
+                                    <span class="text-xs text-gray-400">2h ago</span>
+                                 </div>
+                                 <p class="text-sm font-semibold text-gray-900 mb-0.5">Order Confirmed</p>
+                                 <p class="text-xs text-gray-500 leading-snug">Congratulations! Your bid on 'Safety Equipment Annual Supply' has been accepted.</p>
+                              </div>
+                           </div>
+                        </div>
+
+                         <!-- Item 3 -->
+                        <div class="p-4 hover:bg-gray-50 transition-colors cursor-pointer">
+                           <div class="flex items-start gap-3 pl-3"> <!-- Added padding to align since no dot -->
+                              <div class="flex-grow">
+                                 <div class="flex items-center justify-between mb-1">
+                                    <span class="inline-flex items-center rounded-md bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">Tender</span>
+                                    <span class="text-xs text-gray-400">5h ago</span>
+                                 </div>
+                                 <p class="text-sm font-semibold text-gray-900 mb-0.5">New Tender in Your Category</p>
+                                 <p class="text-xs text-gray-500 leading-snug">A new tender for 'Industrial Fasteners' has been published matching your preferences.</p>
+                              </div>
+                           </div>
+                        </div>
+                        
+                        <!-- Item 4 -->
+                        <div class="p-4 hover:bg-gray-50 transition-colors cursor-pointer">
+                           <div class="flex items-start gap-3 pl-3">
+                              <div class="flex-grow">
+                                 <div class="flex items-center justify-between mb-1">
+                                    <span class="inline-flex items-center rounded-md bg-orange-50 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 ring-1 ring-inset ring-orange-600/20">Alert</span>
+                                    <span class="text-xs text-gray-400">1d ago</span>
+                                 </div>
+                                 <p class="text-sm font-semibold text-gray-900 mb-0.5">Tender Closing Soon</p>
+                                 <p class="text-xs text-gray-500 leading-snug">CNC Machining Center tender closes in 24 hours.</p>
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+                  </div>
+                  <div class="p-3 border-t border-gray-100 bg-gray-50 text-center">
+                     <button class="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition-colors">View all notifications</button>
+                  </div>
+               </div>
+            </div>
             
             <!-- User Profile Dropdown -->
-            <div class="relative ml-2">
+            <div class="relative ml-2" ref="profileRef">
                <button 
                   @click="isProfileOpen = !isProfileOpen" 
                   class="flex items-center gap-3 rounded-full hover:bg-gray-50 p-1 pr-3 transition-colors border border-transparent hover:border-gray-200"
@@ -145,7 +246,7 @@ const handleLogout = () => {
                   <ChevronDown class="h-3 w-3 text-gray-400" />
                </button>
 
-               <div v-if="isProfileOpen" class="absolute right-0 mt-2 w-56 origin-top-right rounded-xl bg-white shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none z-50 overflow-hidden" @click.away="isProfileOpen = false">
+               <div v-if="isProfileOpen" class="absolute right-0 mt-2 w-56 origin-top-right rounded-xl bg-white shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none z-50 overflow-hidden">
                    <div class="px-4 py-3 border-b border-gray-100 bg-gray-50">
                      <p class="text-sm leading-5 font-medium text-gray-900 truncate">{{ state.user?.name }}</p>
                      <p class="text-xs leading-4 text-gray-500 truncate">{{ state.user?.email }}</p>
