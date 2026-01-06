@@ -45,6 +45,7 @@ const init = async () => {
     try {
         const response = await fetch('/api/method/frappe.auth.get_logged_user', {
             method: 'GET',
+            credentials: 'include',
             headers: { 'Accept': 'application/json' }
         })
 
@@ -68,6 +69,7 @@ const login = async (email, password) => {
     try {
         const response = await fetch('/api/method/login', {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ usr: email, pwd: password })
         })
@@ -97,7 +99,10 @@ const login = async (email, password) => {
 
 const logout = async () => {
     try {
-        await fetch('/api/method/logout', { method: 'POST' })
+        await fetch('/api/method/logout', {
+            method: 'POST',
+            credentials: 'include'
+        })
         state.user = null
     } catch (error) {
         console.error("Logout Error:", error)
