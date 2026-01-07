@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { MessageSquare, Clock, CheckCircle, FileQuestion, Plus, Search, FileText } from 'lucide-vue-next'
+import { MessageSquare, Clock, CheckCircle, FileQuestion, Plus, Search, FileText, X, Send } from 'lucide-vue-next'
 
 const activeTab = ref('My Queries')
 const tabs = ['My Queries', 'Questionnaires']
@@ -87,6 +87,86 @@ const filteredQueries = computed(() => {
     q.ref.toLowerCase().includes(searchQuery.value.toLowerCase()))
   )
 })
+const isQueryModalOpen = ref(false)
+const newQuery = ref({
+  tender: '',
+  subject: '',
+  description: ''
+})
+
+const tendersList = [
+  'Industrial Steel Plates - Grade A • TND-2024-001',
+  'CNC Machining Center • TND-2024-002',
+  'Safety Equipment Annual Supply • TND-2024-003'
+]
+
+const openModal = () => {
+  isQueryModalOpen.value = true
+}
+
+const closeModal = () => {
+  isQueryModalOpen.value = false
+  newQuery.value = { tender: '', subject: '', description: '' }
+}
+
+const submitQuery = () => {
+  if (!newQuery.value.subject || !newQuery.value.description) return
+  
+  queries.value.unshift({
+    id: Date.now(),
+    type: 'Query',
+    title: newQuery.value.subject,
+    ref: newQuery.value.tender || 'General Inquiry',
+    status: 'Pending',
+    question: newQuery.value.description,
+    response: null,
+    submitted: 'Just now'
+  })
+  
+  closeModal()
+}
+
+// Request Questionnaire Logic
+const isRequestModalOpen = ref(false)
+const newRequest = ref({
+  tender: '',
+  type: '',
+  reason: ''
+})
+
+const questionnaireTypes = [
+  'Vendor Compliance Assessment',
+  'Financial Capability Survey',
+  'Technical Assessment',
+  'Safety Standards Review'
+]
+
+const openRequestModal = () => {
+  isRequestModalOpen.value = true
+}
+
+const closeRequestModal = () => {
+  isRequestModalOpen.value = false
+  newRequest.value = { tender: '', type: '', reason: '' }
+}
+
+const submitRequest = () => {
+  if (!newRequest.value.tender || !newRequest.value.type) return
+  
+  queries.value.unshift({
+    id: Date.now(),
+    type: 'Questionnaire',
+    title: newRequest.value.type,
+    ref: newRequest.value.tender,
+    status: 'Pending',
+    question: newRequest.value.reason || 'Requested questionnaire',
+    response: null,
+    submitted: 'Just now',
+    actionLabel: 'View Status'
+  })
+  
+  closeRequestModal()
+}
 </script>
 
 <template>
@@ -98,10 +178,10 @@ const filteredQueries = computed(() => {
         <p class="mt-1 text-sm text-gray-500">Submit queries about tenders and respond to questionnaires.</p>
       </div>
       <div class="flex gap-3">
-         <button class="inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
+         <button @click="openRequestModal" class="inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
             <FileText class="h-4 w-4" /> Request Questionnaire
          </button>
-         <button class="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+         <button @click="openModal" class="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
             <Plus class="h-4 w-4" /> New Query
          </button>
       </div>
@@ -206,5 +286,94 @@ const filteredQueries = computed(() => {
        </div>
     </div>
 
+    <!-- Submit Query Modal -->
+    <div v-if="isQueryModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
+      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeModal"></div>
+      
+      <div class="relative transform overflow-hidden rounded-xl bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+        <div class="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
+          <button type="button" class="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none" @click="closeModal">
+            <span class="sr-only">Close</span>
+            <X class="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+        
+        <div>
+          <h3 class="text-lg font-bold leading-6 text-gray-900 mb-6" id="modal-title">Submit New Query</h3>
+          <div class="space-y-4">
+             <div>
+               <label for="tender" class="block text-sm font-semibold text-gray-900 mb-1.5">Select Tender</label>
+               <select id="tender" v-model="newQuery.tender" class="block w-full rounded-lg border-0 py-2.5 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                 <option value="" disabled selected>Select tender</option>
+                 <option v-for="tender in tendersList" :key="tender" :value="tender">{{ tender }}</option>
+               </select>
+             </div>
+
+             <div>
+               <label for="subject" class="block text-sm font-semibold text-gray-900 mb-1.5">Subject</label>
+               <input type="text" id="subject" v-model="newQuery.subject" placeholder="Brief subject of your query" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+             </div>
+
+             <div>
+               <label for="query" class="block text-sm font-semibold text-gray-900 mb-1.5">Your Query</label>
+               <textarea id="query" rows="4" v-model="newQuery.description" placeholder="Describe your query in detail..." class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"></textarea>
+             </div>
+          </div>
+          
+          <div class="mt-6">
+             <button @click="submitQuery" type="button" class="inline-flex w-full justify-center rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 gap-2 items-center transition-all">
+               <Send class="h-4 w-4" /> Submit Query
+             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- Request Questionnaire Modal -->
+    <div v-if="isRequestModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
+      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeRequestModal"></div>
+      
+      <div class="relative transform overflow-hidden rounded-xl bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+        <div class="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
+          <button type="button" class="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none" @click="closeRequestModal">
+            <span class="sr-only">Close</span>
+            <X class="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+        
+        <div>
+          <h3 class="text-lg font-bold leading-6 text-gray-900 mb-6" id="modal-title">Request Questionnaire</h3>
+          <div class="space-y-4">
+             <div>
+               <label for="req-tender" class="block text-sm font-semibold text-gray-900 mb-1.5">Select Tender</label>
+               <select id="req-tender" v-model="newRequest.tender" class="block w-full rounded-lg border-0 py-2.5 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                 <option value="" disabled selected>Select tender</option>
+                 <option v-for="tender in tendersList" :key="tender" :value="tender">{{ tender }}</option>
+               </select>
+             </div>
+
+             <div>
+               <label for="req-type" class="block text-sm font-semibold text-gray-900 mb-1.5">Type of Questionnaire</label>
+               <select id="req-type" v-model="newRequest.type" class="block w-full rounded-lg border-0 py-2.5 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                 <option value="" disabled selected>Select type</option>
+                 <option v-for="qType in questionnaireTypes" :key="qType" :value="qType">{{ qType }}</option>
+               </select>
+             </div>
+
+             <div>
+               <label for="req-reason" class="block text-sm font-semibold text-gray-900 mb-1.5">Reason for Request</label>
+               <textarea id="req-reason" rows="4" v-model="newRequest.reason" placeholder="Explain why you need this questionnaire..." class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"></textarea>
+             </div>
+          </div>
+          
+          <div class="mt-6">
+             <button @click="submitRequest" type="button" class="inline-flex w-full justify-center rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-all">
+               Submit Request
+             </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

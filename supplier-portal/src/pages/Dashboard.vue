@@ -9,11 +9,16 @@ import {
   MoreHorizontal,
   Download,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Eye,
+  User,
+  PieChart,
+  BarChart3
 } from 'lucide-vue-next'
 import { useAuth } from '../auth.js'
 
 const { state } = useAuth()
+const activeTab = ref('Overview')
 
 const stats = [
   { 
@@ -100,6 +105,83 @@ const activities = [
   }
 ]
 
+const bidHistory = [
+  { 
+    title: 'Industrial Steel Plates - Grade A',
+    id: 'TND-2024-001',
+    amount: '₹33,50,000',
+    date: '25 Jan 2024',
+    submitted: '25 Jan 2024',
+    rank: '#2',
+    status: 'Shortlisted',
+    statusColor: 'bg-blue-100 text-blue-800'
+  },
+  { 
+    title: 'Electrical Control Panels',
+    id: 'TND-2024-004',
+    amount: '₹27,00,000',
+    date: '28 Jan 2024',
+    submitted: '28 Jan 2024',
+    rank: '#3',
+    status: 'Under Review',
+    statusColor: 'bg-yellow-100 text-yellow-800'
+  },
+  { 
+    title: 'Safety Equipment Annual Supply',
+    id: 'TND-2024-005',
+    amount: '₹7,50,000',
+    date: '20 Jan 2024',
+    submitted: '20 Jan 2024',
+    rank: '#1',
+    status: 'Won',
+    statusColor: 'bg-green-100 text-green-800'
+  },
+  {
+    title: 'Welding Consumables Q4',
+    id: 'TND-2023-089',
+    amount: '₹4,50,000',
+    date: '10 Dec 2023',
+    submitted: '10 Dec 2023',
+    rank: '#4',
+    status: 'Not Selected',
+    statusColor: 'bg-red-100 text-red-800'
+  },
+  {
+    title: 'CNC Machining Center',
+    id: 'TND-2024-002',
+    amount: '₹82,00,000',
+    date: '29 Jan 2024',
+    submitted: '29 Jan 2024',
+    rank: '-',
+    status: 'Submitted',
+    statusColor: 'bg-gray-100 text-gray-800'
+  },
+  {
+    title: 'Office Furniture Supply',
+    id: 'TND-2023-078',
+    amount: '₹3,20,000',
+    date: '15 Nov 2023',
+    submitted: '15 Nov 2023',
+    rank: '#1',
+    status: 'Won',
+    statusColor: 'bg-green-100 text-green-800'
+  }
+]
+
+const performanceCategories = [
+  { name: 'Raw Materials', won: 2, total: 5, percentage: 40, color: 'bg-purple-600' },
+  { name: 'Machinery', won: 1, total: 3, percentage: 33, color: 'bg-indigo-600' },
+  { name: 'Consumables', won: 2, total: 4, percentage: 50, color: 'bg-blue-600' },
+  { name: 'Electrical', won: 1, total: 2, percentage: 50, color: 'bg-violet-600' }
+]
+
+const monthlyPerformance = [
+  { month: 'Jan', count: 2, growth: '+10%' },
+  { month: 'Feb', count: 3, growth: '+15%' },
+  { month: 'Mar', count: 4, growth: '+20%' },
+  { month: 'Apr', count: 5, growth: '+25%' }
+]
+
 const profileCompletion = 85
 </script>
 
@@ -172,13 +254,14 @@ const profileCompletion = 85
       <!-- Tabs (Visual Only for now) -->
       <div class="border-b border-gray-200 mb-8">
         <nav class="-mb-px flex space-x-8" aria-label="Tabs">
-          <a href="#" class="border-indigo-500 text-indigo-600 whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium" aria-current="page">Overview</a>
-          <a href="#" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">My Bids</a>
-          <a href="#" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">Analytics</a>
+          <a href="#" @click.prevent="activeTab = 'Overview'" :class="[activeTab === 'Overview' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700', 'whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium']" aria-current="page">Overview</a>
+          <a href="#" @click.prevent="activeTab = 'My Bids'" :class="[activeTab === 'My Bids' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700', 'whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium']">My Bids</a>
+          <a href="#" @click.prevent="activeTab = 'Analytics'" :class="[activeTab === 'Analytics' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700', 'whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium']">Analytics</a>
         </nav>
       </div>
 
-      <div class="grid grid-cols-1 gap-8 lg:grid-cols-3">
+      <!-- Overview View -->
+      <div v-if="activeTab === 'Overview'" class="grid grid-cols-1 gap-8 lg:grid-cols-3">
         <!-- Left Column -->
         <div class="lg:col-span-2 space-y-8">
            <!-- Value Cards -->
@@ -214,7 +297,7 @@ const profileCompletion = 85
                     <FileText class="h-5 w-5 text-indigo-600" />
                     <h3 class="font-semibold text-gray-900">Recent Bids</h3>
                  </div>
-                 <a href="#" class="text-sm font-semibold text-indigo-600 hover:text-indigo-500 flex items-center">
+                 <a href="#" @click.prevent="activeTab = 'My Bids'" class="text-sm font-semibold text-indigo-600 hover:text-indigo-500 flex items-center">
                     View All <span aria-hidden="true" class="ml-1">→</span>
                  </a>
               </div>
@@ -291,6 +374,149 @@ const profileCompletion = 85
               </div>
            </div>
         </div>
+      </div>
+
+      <!-- My Bids View -->
+      <div v-else-if="activeTab === 'My Bids'" class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5 p-6">
+         <!-- Bids Table Header -->
+         <div class="flex items-center justify-between mb-6">
+            <h3 class="font-semibold text-gray-900 flex items-center gap-2">
+               <TrendingUp class="h-5 w-5 text-indigo-600" />
+               Complete Bid History
+            </h3>
+            <button class="flex items-center text-sm font-medium text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50">
+               <Download class="h-4 w-4 mr-2" /> Export
+            </button>
+         </div>
+         
+         <!-- Bids Table -->
+         <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+               <thead>
+                  <tr>
+                     <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-xs font-semibold text-gray-500 sm:pl-0">Tender</th>
+                     <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Your Bid</th>
+                     <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Submitted</th>
+                     <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Rank</th>
+                     <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Status</th>
+                     <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Action</th>
+                  </tr>
+               </thead>
+               <tbody class="divide-y divide-gray-100">
+                  <tr v-for="bid in bidHistory" :key="bid.id" class="hover:bg-gray-50 transition-colors">
+                     <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">
+                        <div>{{ bid.title }}</div>
+                        <div class="text-xs text-gray-400 mt-0.5">{{ bid.id }}</div>
+                     </td>
+                     <td class="whitespace-nowrap px-3 py-4 text-sm font-semibold text-gray-900">{{ bid.amount }}</td>
+                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{ bid.submitted }}</td>
+                     <td class="whitespace-nowrap px-3 py-4 text-sm font-medium text-amber-500">{{ bid.rank }}</td>
+                     <td class="whitespace-nowrap px-3 py-4 text-sm">
+                        <span :class="[bid.statusColor, 'inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ring-gray-500/10']">
+                           {{ bid.status }}
+                        </span>
+                     </td>
+                     <td class="whitespace-nowrap px-3 py-4 text-sm">
+                        <button class="text-gray-400 hover:text-indigo-600 flex items-center gap-1 transition-colors">
+                           <Eye class="h-4 w-4" /> View
+                        </button>
+                     </td>
+                  </tr>
+               </tbody>
+            </table>
+         </div>
+      </div>
+      
+      <!-- Analytics View -->
+      <!-- Analytics View -->
+      <div v-else-if="activeTab === 'Analytics'" class="grid grid-cols-1 gap-8 lg:grid-cols-3">
+         <!-- Left Column (Analytics) -->
+         <div class="lg:col-span-2 space-y-8">
+            <!-- Performance by Category -->
+            <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5 p-6">
+               <h3 class="font-semibold text-gray-900 mb-6 flex items-center gap-2">
+                  <PieChart class="h-5 w-5 text-indigo-600" />
+                  Performance by Category
+               </h3>
+               <div class="space-y-6">
+                  <div v-for="category in performanceCategories" :key="category.name">
+                     <div class="flex justify-between text-sm mb-1">
+                        <span class="font-medium text-gray-900">{{ category.name }}</span>
+                        <span class="text-gray-500">{{ category.won }}/{{ category.total }} won ({{ category.percentage }}%)</span>
+                     </div>
+                     <div class="w-full bg-gray-100 rounded-full h-2">
+                        <div class="h-2 rounded-full transition-all duration-500" :class="category.color" :style="{ width: `${category.percentage}%` }"></div>
+                     </div>
+                  </div>
+               </div>
+            </div>
+
+            <!-- Monthly Performance -->
+            <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5 p-6">
+               <h3 class="font-semibold text-gray-900 mb-6 flex items-center gap-2">
+                  <BarChart3 class="h-5 w-5 text-indigo-600" />
+                  Monthly Performance
+               </h3>
+               <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div v-for="month in monthlyPerformance" :key="month.month" class="bg-gray-50 rounded-lg p-4 text-center">
+                     <div class="text-sm font-medium text-gray-500 mb-1">{{ month.month }}</div>
+                     <div class="text-2xl font-bold text-gray-900 mb-1">{{ month.count }}</div>
+                     <div class="text-xs font-semibold text-green-600 flex items-center justify-center gap-0.5">
+                        <span>↑</span> {{ month.growth }}
+                     </div>
+                  </div>
+               </div>
+            </div>
+         </div>
+
+         <!-- Right Column (Reused) -->
+         <div class="space-y-8">
+            <!-- Profile Strength -->
+            <div class="bg-white rounded-xl p-6 shadow-sm ring-1 ring-gray-900/5">
+               <h3 class="font-semibold text-gray-900 mb-4">Profile Strength</h3>
+               <div class="flex items-center gap-6">
+                  <div class="relative h-20 w-20 flex-shrink-0">
+                     <svg class="h-full w-full -rotate-90 transform" viewBox="0 0 36 36">
+                        <path class="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" />
+                        <path class="text-indigo-600" :stroke-dasharray="`${profileCompletion}, 100`" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" />
+                     </svg>
+                     <div class="absolute inset-0 flex items-center justify-center flex-col">
+                        <span class="text-sm font-bold text-gray-900">{{ profileCompletion }}%</span>
+                     </div>
+                  </div>
+                  <div>
+                     <p class="text-sm text-gray-600 mb-2">Complete your profile to increase visibility</p>
+                     <a href="#" class="text-sm font-semibold text-indigo-600 hover:text-indigo-500">Complete Now →</a>
+                  </div>
+               </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5">
+               <div class="p-4 border-b border-gray-100">
+                  <h3 class="font-semibold text-gray-900 flex items-center gap-2">
+                     <TrendingUp class="h-4 w-4 text-gray-400" />
+                     Recent Activity
+                  </h3>
+               </div>
+               <div class="p-4">
+                  <ul role="list" class="space-y-6">
+                     <li v-for="(activity, activityIdx) in activities" :key="activityIdx" class="relative flex gap-x-4">
+                        <div class="absolute left-0 top-0 flex w-6 justify-center -bottom-6" v-if="activityIdx !== activities.length - 1">
+                           <div class="w-px bg-gray-200" />
+                        </div>
+                        <div :class="[activity.iconColor, 'relative flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-gray-50']">
+                           <component :is="activity.icon" class="h-4 w-4" aria-hidden="true" />
+                        </div>
+                        <div class="flex-auto py-0.5">
+                           <p class="text-sm font-medium text-gray-900 leading-snug">{{ activity.title }}</p>
+                           <p class="text-xs text-gray-500 mt-1">{{ activity.time }}</p>
+                        </div>
+                     </li>
+                  </ul>
+               </div>
+            </div>
+         </div>
       </div>
     </div>
   </div>
