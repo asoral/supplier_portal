@@ -57,12 +57,13 @@ app_license = "mit"
 # ----------
 
 # application home page (will override Website Settings)
-# home_page = "login"
+home_page = "/supplier-portal"
 
 # website user home page (by Role)
-# website user home page (by Role)
 role_home_page = {
-	"Supplier": "/supplier-portal"
+	"Supplier": "/supplier-portal",
+    "Vendor": "/supplier-portal",
+    "LMS Student": "/supplier-portal"
 }
 
 website_user_home = "/supplier-portal"

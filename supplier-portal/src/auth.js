@@ -2,22 +2,20 @@ import { reactive, computed } from 'vue'
 
 const state = reactive({
     user: null,
-    cookie: null
+    csrfToken: null
 })
 
-// Initialize state from existing session if possible
-// Initialize state from existing session if possible
 // Helper to fetch full details
 const fetchUserDetails = async (email) => {
     try {
         // 1. Fetch User details
-        const userRes = await fetch(`/api/resource/User/${email}`);
+        const userRes = await fetch(`/api/resource/User/${email}`, { credentials: 'include' });
         const userDoc = await userRes.json();
         const fullName = userDoc.data?.full_name || email;
 
         // 2. Fetch Supplier details (if connected)
         try {
-            const supplierRes = await fetch(`/api/resource/Supplier?filters=[["email_id","=", "${email}"]]&fields=["name", "supplier_name"]`);
+            const supplierRes = await fetch(`/api/resource/Supplier?filters=[["email_id","=", "${email}"]]&fields=["name", "supplier_name"]`, { credentials: 'include' });
             const supplierData = await supplierRes.json();
 
             let company = 'Vendor';
@@ -40,6 +38,15 @@ const fetchUserDetails = async (email) => {
     }
 }
 
+// Function to extract CSRF token from document cookies as fallback
+const getCsrfFromCookie = () => {
+    if (document.cookie && document.cookie.includes('sid')) {
+        // This is a naive check. Real token is usually not in cookie for SPA unless customized.
+        // But often X-Frappe-CSRF-Token header is enough if captured.
+    }
+    return null;
+}
+
 // Initialize state from existing session if possible
 const init = async () => {
     try {
@@ -48,6 +55,12 @@ const init = async () => {
             credentials: 'include',
             headers: { 'Accept': 'application/json' }
         })
+
+        // Capture CSRF Token from response header
+        const csrfToken = response.headers.get('X-Frappe-CSRF-Token');
+        if (csrfToken) {
+            state.csrfToken = csrfToken;
+        }
 
         const contentType = response.headers.get("content-type");
         if (response.ok && contentType && contentType.indexOf("application/json") !== -1) {
@@ -70,9 +83,18 @@ const login = async (email, password) => {
         const response = await fetch('/api/method/login', {
             method: 'POST',
             credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                ...(state.csrfToken ? { 'X-Frappe-CSRF-Token': state.csrfToken } : {})
+            },
             body: JSON.stringify({ usr: email, pwd: password })
         })
+
+        // Capture CSRF if updated
+        const csrfToken = response.headers.get('X-Frappe-CSRF-Token');
+        if (csrfToken) {
+            state.csrfToken = csrfToken;
+        }
 
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.indexOf("application/json") !== -1) {
@@ -80,6 +102,8 @@ const login = async (email, password) => {
 
             if (data.message === 'Logged In') {
                 state.user = await fetchUserDetails(email);
+                // Re-init to ensure we have fresh token/state
+                await init();
                 return state.user
             } else {
                 throw new Error(data.message || 'Login failed')
@@ -100,12 +124,14 @@ const login = async (email, password) => {
 const logout = async () => {
     try {
         await fetch('/api/method/logout', {
-            method: 'POST',
+            method: 'GET',
             credentials: 'include'
         })
-        state.user = null
     } catch (error) {
-        console.error("Logout Error:", error)
+        console.error("Logout Error (ignoring):", error)
+    } finally {
+        state.user = null
+        state.csrfToken = null
     }
 }
 
@@ -114,7 +140,11 @@ const register = async (data) => {
         // Use custom API for Vendor Registration
         const response = await fetch('/api/method/supplier_portal.api.register_vendor', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(state.csrfToken ? { 'X-Frappe-CSRF-Token': state.csrfToken } : {})
+            },
             body: JSON.stringify({
                 company_name: data.companyName,
                 email: data.email,

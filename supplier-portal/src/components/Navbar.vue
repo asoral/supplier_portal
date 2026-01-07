@@ -72,7 +72,7 @@ const toggleMenu = () => {
 const handleLogout = () => {
   logout()
   isProfileOpen.value = false
-  router.push('/login')
+  window.location.href = '/login'
 }
 </script>
 

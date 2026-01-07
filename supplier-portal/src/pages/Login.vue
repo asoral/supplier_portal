@@ -1,23 +1,46 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../auth.js'
 import { Lock, Mail, Info } from 'lucide-vue-next'
 
 const router = useRouter()
-const { login } = useAuth()
+const { login, isLoggedIn } = useAuth()
 const email = ref('supplier@techsolutions.com')
 const password = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
+
+const redirectIfLoggedIn = () => {
+  if (isLoggedIn.value) {
+    router.push('/dashboard')
+  }
+}
+
+onMounted(() => {
+  redirectIfLoggedIn()
+})
+
+watch(isLoggedIn, (newVal) => {
+  if (newVal) {
+    router.push('/dashboard')
+  }
+})
 
 const handleLogin = async (e) => {
   e.preventDefault()
   loading.value = true
   errorMsg.value = ''
   try {
-     await login(email.value, password.value)
-     router.push('/dashboard')
+     const user = await login(email.value, password.value)
+     
+     // Handle redirect
+     const redirect = router.currentRoute.value.query.redirect
+     if (redirect && !redirect.includes('desk') && !redirect.includes('app')) {
+        router.push(redirect)
+     } else {
+        router.push('/dashboard')
+     }
   } catch (error) {
      console.error("Login failed", error)
      errorMsg.value = 'Invalid login credentials'
