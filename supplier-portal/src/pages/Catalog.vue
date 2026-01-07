@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { Package, Plus, Search, Filter, Edit2, Trash2, TrendingUp, Clock, CheckCircle, AlertCircle } from 'lucide-vue-next'
+import { Package, Plus, Search, Filter, Edit2, Trash2, TrendingUp, Clock, CheckCircle, AlertCircle, X } from 'lucide-vue-next'
 
 const activeTab = ref('My Catalog')
 const tabs = ['My Catalog', 'Portal Items']
@@ -77,6 +77,83 @@ const filteredProducts = computed(() => {
     item.sku.toLowerCase().includes(searchQuery.value.toLowerCase())
   )
 })
+// Add Product Modal Logic
+const isAddProductModalOpen = ref(false)
+const isEditing = ref(false)
+const editingId = ref(null)
+
+const newProduct = ref({
+  name: '',
+  sku: '',
+  category: '',
+  unit: '',
+  price: '',
+  tax: '18%',
+  moq: '',
+  leadTime: '',
+  description: ''
+})
+
+const openAddModal = () => {
+  isEditing.value = false
+  editingId.value = null
+  newProduct.value = { name: '', sku: '', category: '', unit: '', price: '', tax: '18%', moq: '', leadTime: '', description: '' }
+  isAddProductModalOpen.value = true
+}
+
+const openEditModal = (product) => {
+  isEditing.value = true
+  editingId.value = product.id
+  // Parse tax and leadTime to raw values for inputs
+  const taxVal = product.tax ? product.tax.replace(' GST', '').trim() : '18%'
+  const leadVal = product.leadTime ? product.leadTime.replace(' days', '').trim() : ''
+  
+  newProduct.value = { 
+    ...product,
+    tax: taxVal, // Ensure formatting
+    leadTime: leadVal
+  }
+  isAddProductModalOpen.value = true
+}
+
+const closeAddModal = () => {
+  isAddProductModalOpen.value = false
+  isEditing.value = false
+  editingId.value = null
+  newProduct.value = { name: '', sku: '', category: '', unit: '', price: '', tax: '18%', moq: '', leadTime: '', description: '' }
+}
+
+const submitProduct = () => {
+  if (!newProduct.value.name) return
+  
+  const productData = {
+    name: newProduct.value.name,
+    sku: newProduct.value.sku || 'N/A',
+    category: newProduct.value.category || 'Uncategorized',
+    unit: newProduct.value.unit || 'Nos',
+    description: newProduct.value.description || 'No description',
+    status: isEditing.value ? 'active' : 'pending',
+    matches: isEditing.value ? (products.value.find(p => p.id === editingId.value)?.matches || 0) : 0,
+    price: newProduct.value.price || 0,
+    tax: newProduct.value.tax + ' GST',
+    leadTime: newProduct.value.leadTime ? newProduct.value.leadTime + ' days' : '7 days',
+    moq: newProduct.value.moq || 1
+  }
+
+  if (isEditing.value && editingId.value) {
+    const index = products.value.findIndex(p => p.id === editingId.value)
+    if (index !== -1) {
+       products.value[index] = { ...products.value[index], ...productData }
+    }
+  } else {
+    products.value.unshift({
+      id: Date.now(),
+      ...productData
+    })
+  }
+  
+  closeAddModal()
+}
 </script>
 
 <template>
@@ -87,7 +164,7 @@ const filteredProducts = computed(() => {
         <h1 class="text-3xl font-bold tracking-tight text-gray-900">Product Catalog</h1>
         <p class="mt-1 text-sm text-gray-500">Manage your product catalog and pricing.</p>
       </div>
-      <button class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 flex items-center gap-2">
+      <button @click="openAddModal" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 flex items-center gap-2">
          <Plus class="h-4 w-4" /> Add Product
       </button>
     </div>
@@ -193,9 +270,9 @@ const filteredProducts = computed(() => {
                  </div>
 
                  <div class="flex gap-2">
-                    <button class="p-1.5 text-gray-400 hover:text-indigo-600 rounded hover:bg-gray-100">
-                       <Edit2 class="h-4 w-4" />
-                    </button>
+                     <button @click="openEditModal(product)" class="p-1.5 text-gray-400 hover:text-indigo-600 rounded hover:bg-gray-100">
+                        <Edit2 class="h-4 w-4" />
+                     </button>
                     <button class="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-gray-100">
                        <Trash2 class="h-4 w-4" />
                     </button>
@@ -203,6 +280,95 @@ const filteredProducts = computed(() => {
              </div>
           </div>
        </div>
+    </div>
+    <!-- Add Product Modal -->
+    <div v-if="isAddProductModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
+      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeAddModal"></div>
+      
+      <div class="relative transform overflow-hidden rounded-xl bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
+        <div class="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
+          <button type="button" class="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none" @click="closeAddModal">
+            <span class="sr-only">Close</span>
+            <X class="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+        
+        <div>
+          <h3 class="text-lg font-bold leading-6 text-gray-900 mb-6" id="modal-title">{{ isEditing ? 'Edit Product' : 'Add New Product' }}</h3>
+          <div class="space-y-4">
+             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+               <div>
+                 <label for="prod-name" class="block text-sm font-semibold text-gray-900 mb-1.5">Product Name</label>
+                 <input type="text" id="prod-name" v-model="newProduct.name" placeholder="Enter product name" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+               </div>
+               <div>
+                  <label for="sku" class="block text-sm font-semibold text-gray-900 mb-1.5">SKU</label>
+                  <input type="text" id="sku" v-model="newProduct.sku" placeholder="Enter SKU" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+               </div>
+             </div>
+
+             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label for="category" class="block text-sm font-semibold text-gray-900 mb-1.5">Category</label>
+                  <select id="category" v-model="newProduct.category" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                     <option value="" disabled>Select category</option>
+                     <option>Safety</option>
+                     <option>Raw Materials</option>
+                     <option>Electronics</option>
+                     <option>Construction</option>
+                  </select>
+                </div>
+                <div>
+                   <label for="unit" class="block text-sm font-semibold text-gray-900 mb-1.5">Unit of Measure</label>
+                   <select id="unit" v-model="newProduct.unit" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                       <option value="" disabled>Select unit</option>
+                       <option>Nos</option>
+                       <option>Pairs</option>
+                       <option>Kg</option>
+                       <option>Liters</option>
+                       <option>Meters</option>
+                   </select>
+                </div>
+             </div>
+
+             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                   <label for="price" class="block text-sm font-semibold text-gray-900 mb-1.5">Base Price (₹)</label>
+                   <input type="number" id="price" v-model="newProduct.price" placeholder="0.00" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                </div>
+                 <div>
+                   <label for="gst" class="block text-sm font-semibold text-gray-900 mb-1.5">GST Rate (%)</label>
+                   <select id="gst" v-model="newProduct.tax" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                       <option>5%</option>
+                       <option>12%</option>
+                       <option>18%</option>
+                       <option>28%</option>
+                   </select>
+                </div>
+                 <div>
+                   <label for="moq" class="block text-sm font-semibold text-gray-900 mb-1.5">MOQ</label>
+                   <input type="number" id="moq" v-model="newProduct.moq" placeholder="Minimum order qty" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                </div>
+             </div>
+
+             <div>
+                <label for="lead-time" class="block text-sm font-semibold text-gray-900 mb-1.5">Lead Time (Days)</label>
+                <input type="text" id="lead-time" v-model="newProduct.leadTime" placeholder="Delivery lead time" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+             </div>
+
+             <div>
+                <label for="specs" class="block text-sm font-semibold text-gray-900 mb-1.5">Specifications</label>
+                <textarea id="specs" v-model="newProduct.description" rows="3" placeholder="Enter product specifications..." class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"></textarea>
+             </div>
+          </div>
+          
+          <div class="mt-6">
+             <button @click="submitProduct" type="button" class="inline-flex w-full justify-center rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-all">
+               {{ isEditing ? 'Update Product' : 'Add to Catalog' }}
+             </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>

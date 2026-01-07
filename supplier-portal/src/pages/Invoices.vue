@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { FileText, Download, Eye, Plus, CreditCard, Clock } from 'lucide-vue-next'
+import { FileText, Download, Eye, Plus, CreditCard, Clock, X, UploadCloud } from 'lucide-vue-next'
 
 const stats = [
   { name: 'Total Invoiced', value: '₹20,54,000', change: '+12%', icon: FileText },
@@ -44,6 +44,47 @@ const invoices = ref([
 const activeTab = ref('Invoices')
 const tabs = ['Invoices', 'Payments', 'Debit Notes']
 const searchQuery = ref('')
+
+// Upload Modal Logic
+const isUploadModalOpen = ref(false)
+const newInvoice = ref({
+  po: '',
+  number: '',
+  date: '',
+  amount: '',
+  file: null
+})
+
+const openUploadModal = () => isUploadModalOpen.value = true
+const closeUploadModal = () => {
+  isUploadModalOpen.value = false
+  newInvoice.value = { po: '', number: '', date: '', amount: '', file: null }
+}
+
+const handleFileUpload = (event) => {
+  const file = event.target.files[0]
+  if (file) {
+    newInvoice.value.file = file
+  }
+}
+
+const submitInvoice = () => {
+  // Mock submission
+  if (!newInvoice.value.number || !newInvoice.value.amount) return
+  
+  invoices.value.unshift({
+    id: newInvoice.value.number,
+    po: newInvoice.value.po,
+    project: 'Industrial Steel Plates', // Mock
+    date: newInvoice.value.date || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+    dueDate: 'Pending',
+    amount: parseFloat(newInvoice.value.amount),
+    tax: parseFloat(newInvoice.value.amount) * 0.18,
+    status: 'Pending Approval'
+  })
+  
+  closeUploadModal()
+}
 </script>
 
 <template>
@@ -54,7 +95,7 @@ const searchQuery = ref('')
         <h1 class="text-3xl font-bold tracking-tight text-gray-900">Invoices & Payments</h1>
         <p class="mt-1 text-sm text-gray-500">Manage invoices, track payments, and view debit notes.</p>
       </div>
-      <button class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 flex items-center gap-2">
+      <button @click="openUploadModal" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 flex items-center gap-2">
          <Plus class="h-4 w-4" /> Upload Invoice
       </button>
     </div>
@@ -153,5 +194,68 @@ const searchQuery = ref('')
        </table>
     </div>
 
+    <!-- Upload Invoice Modal -->
+    <div v-if="isUploadModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
+      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeUploadModal"></div>
+      
+      <div class="relative transform overflow-hidden rounded-xl bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+        <div class="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
+          <button type="button" class="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none" @click="closeUploadModal">
+            <span class="sr-only">Close</span>
+            <X class="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+        
+        <div>
+          <h3 class="text-lg font-bold leading-6 text-gray-900 mb-6" id="modal-title">Upload Invoice</h3>
+          <div class="space-y-4">
+             <div>
+               <label for="po" class="block text-sm font-semibold text-gray-900 mb-1.5">Purchase Order</label>
+               <input type="text" id="po" v-model="newInvoice.po" placeholder="Select PO Number" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+             </div>
+
+             <div>
+               <label for="inv-number" class="block text-sm font-semibold text-gray-900 mb-1.5">Invoice Number</label>
+               <input type="text" id="inv-number" v-model="newInvoice.number" placeholder="Enter your invoice number" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+             </div>
+
+             <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label for="inv-date" class="block text-sm font-semibold text-gray-900 mb-1.5">Invoice Date</label>
+                  <input type="date" id="inv-date" v-model="newInvoice.date" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                </div>
+                <div>
+                  <label for="amount" class="block text-sm font-semibold text-gray-900 mb-1.5">Amount (₹)</label>
+                  <input type="number" id="amount" v-model="newInvoice.amount" placeholder="0.00" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                </div>
+             </div>
+
+             <div>
+               <label class="block text-sm font-semibold text-gray-900 mb-1.5">Invoice Document</label>
+               <div class="mt-2 flex justify-center rounded-lg border border-dashed border-gray-900/25 px-6 py-10 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer relative">
+                 <div class="text-center">
+                   <UploadCloud class="mx-auto h-12 w-12 text-gray-300" aria-hidden="true" />
+                   <div class="mt-4 flex text-sm leading-6 text-gray-600 justify-center">
+                     <label for="file-upload" class="relative cursor-pointer rounded-md font-semibold text-indigo-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-indigo-600 focus-within:ring-offset-2 hover:text-indigo-500">
+                       <span>Click to upload</span>
+                       <input id="file-upload" name="file-upload" type="file" class="sr-only" @change="handleFileUpload">
+                     </label>
+                     <p class="pl-1">or drag and drop</p>
+                   </div>
+                   <p class="text-xs leading-5 text-gray-600">PDF only, max 10MB</p>
+                   <p v-if="newInvoice.file" class="mt-2 text-sm text-indigo-600 font-medium">{{ newInvoice.file.name }}</p>
+                 </div>
+               </div>
+             </div>
+          </div>
+          
+          <div class="mt-6">
+             <button @click="submitInvoice" type="button" class="inline-flex w-full justify-center rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-all">
+               Submit Invoice
+             </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
