@@ -37,7 +37,8 @@ const handleRegister = async (e) => {
         contactPerson: formData.value.contactPerson,
         email: formData.value.email,
         phone: formData.value.phone,
-        gst: formData.value.gst
+        gst: formData.value.gst,
+        password: formData.value.password
      })
      
      // On success, maybe show a success message or redirect to login

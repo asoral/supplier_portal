@@ -17,6 +17,7 @@ def register_vendor(company_name, email, contact_person, phone, gst=None, passwo
         user.first_name = contact_person
         user.mobile_no = phone
         user.enabled = 1
+        user.user_type = "Website User" 
         user.new_password = password
         user.send_welcome_email = 0  # Avoid email if not configured
         user.save(ignore_permissions=True)
@@ -27,21 +28,33 @@ def register_vendor(company_name, email, contact_person, phone, gst=None, passwo
         # 2. Create Supplier
         # Check if supplier with same name exists
         if frappe.db.exists("Supplier", company_name):
-            # Maybe append a number or just accept it? 
-            # Ideally unique, but let's try to create it.
-            pass
-
-        supplier = frappe.new_doc("Supplier")
-        supplier.supplier_name = company_name
-        supplier.supplier_group = "All Supplier Groups"  # Ensure this group exists or pick default
-        supplier.tax_id = gst
+            # If exists, we should probably append this user to it? 
+            # Or fail? For now let's use the existing one if it exists to avoid errors, 
+            # but usually registration implies new entity.
+            # Let's try to get the existing one.
+            supplier = frappe.get_doc("Supplier", company_name)
+        else:
+            supplier = frappe.new_doc("Supplier")
+            supplier.supplier_name = company_name
+            supplier.supplier_group = "All Supplier Groups"
+            supplier.tax_id = gst
         
-        # Link User to Supplier if needed for 'Supplier Portal' standard flow
-        # In standard ERPNext, the link is often done via 'Portal User' in Supplier
-        # or just matching email if 'Grant Commission' etc. 
-        # For now, we just create the record.
+        # Link User to Supplier (portal_users)
+        # Check if already linked
+        is_linked = False
+        if not supplier.portal_users:
+            supplier.portal_users = []
         
-        supplier.save(ignore_permissions=True)
+        for row in supplier.portal_users:
+            if row.user == email:
+                is_linked = True
+                break
+        
+        if not is_linked:
+            supplier.append("portal_users", {
+                "user": email
+            })
+            supplier.save(ignore_permissions=True)
         
         # Commit to ensure persistence even if other things fail later
         frappe.db.commit()
