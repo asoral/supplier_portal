@@ -1,0 +1,43 @@
+{
+    "actions": [],
+    "creation": "2026-01-08 11:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "live_bidding_quick_entry_percent",
+        "bid_closing_soon_fence"
+    ],
+    "fields": [
+        {
+            "fieldname": "live_bidding_quick_entry_percent",
+            "fieldtype": "Percent",
+            "label": "Live Bidding Quick Entry %"
+        },
+        {
+            "fieldname": "bid_closing_soon_fence",
+            "fieldtype": "Int",
+            "label": "Bid Closing Soon Fence (in days)",
+            "default": 3
+        }
+    ],
+    "issingle": 1,
+    "module": "supplier_portal",
+    "name": "Supplier Portal Settings",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        }
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "track_changes": 1
+}

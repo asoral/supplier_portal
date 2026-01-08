@@ -1,0 +1,47 @@
+{
+    "actions": [],
+    "creation": "2026-01-08 11:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "supplier",
+        "rfq"
+    ],
+    "fields": [
+        {
+            "fieldname": "supplier",
+            "fieldtype": "Link",
+            "label": "Supplier",
+            "options": "Supplier",
+            "reqd": 1
+        },
+        {
+            "fieldname": "rfq",
+            "fieldtype": "Link",
+            "label": "RFQ",
+            "options": "Request for Quotation",
+            "reqd": 1
+        }
+    ],
+    "module": "supplier_portal",
+    "name": "Saved RFQ",
+    "naming_rule": "Expression",
+    "autoname": "format:{supplier}-{rfq}",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        }
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "track_changes": 1
+}

@@ -1,0 +1,88 @@
+{
+    "actions": [],
+    "creation": "2026-01-08 11:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "naming_series",
+        "rfq",
+        "date",
+        "subject",
+        "query",
+        "column_break_1",
+        "status",
+        "response"
+    ],
+    "fields": [
+        {
+            "fieldname": "naming_series",
+            "fieldtype": "Data",
+            "label": "Naming Series",
+            "no_copy": 1,
+            "set_only_once": 1
+        },
+        {
+            "fieldname": "rfq",
+            "fieldtype": "Link",
+            "label": "Request for Quotation",
+            "options": "Request for Quotation",
+            "reqd": 1
+        },
+        {
+            "fieldname": "date",
+            "fieldtype": "Date",
+            "label": "Date",
+            "reqd": 1,
+            "default": "Today"
+        },
+        {
+            "fieldname": "subject",
+            "fieldtype": "Data",
+            "label": "Subject",
+            "reqd": 1
+        },
+        {
+            "fieldname": "query",
+            "fieldtype": "Text Editor",
+            "label": "Query",
+            "reqd": 1
+        },
+        {
+            "fieldname": "column_break_1",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "label": "Status",
+            "options": "Pending\nAnswered",
+            "default": "Pending"
+        },
+        {
+            "fieldname": "response",
+            "fieldtype": "Text Editor",
+            "label": "Response"
+        }
+    ],
+    "module": "supplier_portal",
+    "name": "RFQ Query",
+    "naming_rule": "Expression (Old Style)",
+    "autoname": "format:QRY-{YYYY}-{MM}-{#####}",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        }
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "track_changes": 1
+}

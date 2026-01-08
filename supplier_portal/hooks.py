@@ -76,3 +76,23 @@ website_route_rules = [
 fixtures = [
     {"dt": "Custom Field", "filters": {"module": "supplier_portal"}},
 ]
+
+doctype_js = {
+    "Request for Quotation": "public/js/custom_request_for_quotation.js"
+}
+
+doc_events = {
+    "Request for Quotation": {
+        "before_save": "supplier_portal.supplier_portal.custom_request_for_quotation.before_save",
+        "validate": "supplier_portal.supplier_portal.custom_request_for_quotation.validate"
+    },
+    "Supplier Quotation": {
+        "validate": "supplier_portal.supplier_portal.custom_supplier_quotation.validate_bid_decrement"
+    }
+}
+
+scheduler_events = {
+    "hourly": [
+        "supplier_portal.supplier_portal.custom_request_for_quotation.update_bid_status"
+    ]
+}
