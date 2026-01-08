@@ -1,0 +1,57 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:rfq_category_name",
+ "creation": "2026-01-07 12:13:23.848890",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "rfq_category_name",
+  "item_groups"
+ ],
+ "fields": [
+  {
+   "fieldname": "rfq_category_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "RFQ Category Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "item_groups",
+   "fieldtype": "Table MultiSelect",
+   "label": "Item Groups",
+   "options": "RFQ Category Item Group"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-01-07 15:48:30.786456",
+ "modified_by": "Administrator",
+ "module": "supplier_portal",
+ "name": "RFQ Category",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "track_seen": 1
+}
