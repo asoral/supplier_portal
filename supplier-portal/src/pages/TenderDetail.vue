@@ -9,54 +9,61 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const tenderId = route.params.id
+const isLoading = ref(true)
 
-// Mock Data (replace with API call)
-const tender = ref({
-  id: 'TND-2024-001',
-  title: 'Industrial Steel Plates - Grade A',
-  publishedDate: '25 January 2024',
-  location: 'Mumbai, Maharashtra',
-  views: 1250,
-  category: 'Raw Materials',
-  status: 'Active',
-  liveBidding: true,
-  description: 'High quality steel plates for manufacturing heavy machinery components. Must meet IS 2062 standards. Suitable for structural applications requiring high tensile strength.',
-  quantity: '100 Metric Tons',
-  bidsReceived: 12,
-  estBudget: 3280000,
-  deliveryDate: '20 March 2024',
-  deadline: '15 Feb 2024, 05:00 pm',
-  department: 'Production',
-  currentLowestBid: 3250000,
-  minBidDecrement: 5000,
-  emdRequired: 75000,
-  autoExtension: '10 mins',
-  paymentTerms: '30% advance, 70% against delivery',
-  deliveryMode: 'Ex-works',
-  packaging: ' Standard industrial packaging',
-  certification: 'Material Test Certificate (MTC) required',
-  documents: [
-    { name: 'Technical Specifications.pdf', size: '2.4 MB' },
-    { name: 'IS 2062 Standard.pdf', size: '1.2 MB' },
-    { name: 'BOQ Template.xlsx', size: '450 KB' }
-  ],
-  timeline: [
-    { stage: 'Published', date: '25 Jan 2024', completed: true },
-    { stage: 'Pre-bid Meeting', date: '01 Feb 2024', completed: true },
-    { stage: 'Submission Ends', date: '15 Feb 2024', completed: false },
-    { stage: 'Technical Bid Opening', date: '16 Feb 2024', completed: false },
-    { stage: 'Price Bid Opening', date: '17 Feb 2024', completed: false }
-  ],
-  recentBids: [
-    { vendor: 'Vendor A', amount: 3250000, time: '2m ago' },
-    { vendor: 'Vendor B', amount: 3260000, time: '5m ago' },
-    { vendor: 'Vendor C', amount: 3275000, time: '12m ago' },
-  ],
-  similarTenders: [
-    { id: 'TND-2024-012', title: 'Industrial Fasteners Bulk Order', budget: '₹4,50,000', deadline: '18 Feb 2024' }
-  ]
-})
+// Initialize tender as null so we can check if data has arrived
+const tender = ref(null)
+
+// API Fetching Logic
+const fetchTenderDetails = async () => {
+  isLoading.value = true
+  try {
+    // Fetches specifically using the ID from the URL (e.g., PUR-RFQ-2026-00001)
+    const response = await fetch(`/api/resource/Request for Quotation/${route.params.id}`)
+    const result = await response.json()
+    const data = result.data
+
+    // Map the Frappe API response to your UI variables
+    tender.value = {
+      id: data.name,
+      title: data.custom_rfq_subject,
+      publishedDate: data.custom_publish_date ? new Date(data.custom_publish_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A',
+      location: data.billing_address_display ,
+      category: data.custom_rfq_category,
+      status: data.custom_bid_status,
+      liveBidding: data.custom_bid_status === 'Active',
+      description: data.custom_rfq_description ,
+      quantity: data.custom_total_quantity ,
+      bidsReceived: data.custom_no_of_bids ,
+      estBudget: data.custom_total_budget_ ,
+      deadline: data.custom_bid_submission_last_date ,
+      department: data.custom_department ,
+      currentLowestBid: data.custom_total_budget_ ,
+      minBidDecrement: data.custom_min_live_bid_decrement ,
+      emdRequired: data.custom_emd_amount ,
+      termsData: data.terms || 'No terms and conditions provided.',
+      autoExtension: data.custom_auto_extension_limit ,
+      deliveryDate:data.schedule_date,
+      
+      // Default/Placeholder values for sections not yet in your API
+      paymentTerms: 'As per company policy',
+      deliveryMode: 'FOR Destination',
+      certification: 'Required',
+      packaging: 'Standard',
+      documents: [], 
+      timeline: [
+        { stage: 'Published', date: data.custom_publish_date, completed: true },
+        { stage: 'Submission Ends', date: data.custom_bid_submission_last_date, completed: false }
+      ],
+      // recentBids: [], 
+      similarTenders: []
+    }
+  } catch (error) {
+    console.error("Failed to fetch tender details:", error)
+  } finally {
+    isLoading.value = false
+  }
+}
 
 const activeTab = ref('Overview')
 const tabs = ['Overview', 'Specifications', 'Documents', 'Timeline']
@@ -68,19 +75,25 @@ const placeBid = () => {
 }
 
 const quickBid = (amount) => {
-   if (tender.value.currentLowestBid) {
+   if (tender.value && tender.value.currentLowestBid) {
       bidAmount.value = tender.value.currentLowestBid - amount
    }
 }
 
+// Computed properties with safety checks
 const formattedBudget = computed(() => {
+   if (!tender.value) return '₹0'
    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(tender.value.estBudget)
 })
 
 const formattedLowestBid = computed(() => {
+   if (!tender.value) return '₹0'
    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(tender.value.currentLowestBid)
 })
 
+onMounted(() => {
+  fetchTenderDetails()
+})
 </script>
 
 <template>
@@ -153,71 +166,62 @@ const formattedLowestBid = computed(() => {
             <!-- OVERVIEW TAB -->
             <div v-if="activeTab === 'Overview'" class="space-y-6">
                 <!-- Description -->
-                <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                   <h3 class="text-lg font-semibold text-gray-900 mb-4">Description</h3>
-                   <p class="text-sm text-gray-600 leading-relaxed">{{ tender.description }}</p>
+               <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+               <h3 class="text-lg font-semibold text-gray-900 mb-4">Description</h3>
+               
+               <div 
+                  class="text-sm text-gray-600 leading-relaxed mb-8" 
+                  v-html="tender.description || 'No description provided.'"
+               ></div>
 
-                   <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
-                      <div class="p-4 bg-blue-50 rounded-lg border border-blue-100 flex items-center gap-3">
-                         <div class="p-2 bg-blue-100 rounded-lg text-blue-600">
-                            <TrendingDown class="w-5 h-5" />
-                         </div>
-                         <div>
-                            <div class="text-xs text-blue-600 font-medium mb-0.5">Min Bid Decrement</div>
-                            <div class="text-sm font-bold text-gray-900">₹{{ tender.minBidDecrement.toLocaleString() }}</div>
-                         </div>
-                      </div>
-                      <div class="p-4 bg-green-50 rounded-lg border border-green-100 flex items-center gap-3">
-                         <div class="p-2 bg-green-100 rounded-lg text-green-600">
-                            <Banknote class="w-5 h-5" />
-                         </div>
-                         <div>
-                            <div class="text-xs text-green-600 font-medium mb-0.5">EMD Required</div>
-                            <div class="text-sm font-bold text-gray-900">₹{{ tender.emdRequired.toLocaleString() }}</div>
-                         </div>
-                      </div>
-                      <div class="p-4 bg-orange-50 rounded-lg border border-orange-100 flex items-center gap-3">
-                         <div class="p-2 bg-orange-100 rounded-lg text-orange-600">
-                            <Hourglass class="w-5 h-5" />
-                         </div>
-                         <div>
-                            <div class="text-xs text-orange-600 font-medium mb-0.5">Auto Extension</div>
-                            <div class="text-sm font-bold text-gray-900">{{ tender.autoExtension }}</div>
-                         </div>
-                      </div>
-                   </div>
-                </div>
+               <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div class="p-4 bg-blue-50 rounded-lg border border-blue-100 flex items-center gap-3">
+                     <div class="p-2 bg-blue-100 rounded-lg text-blue-600">
+                     <TrendingDown class="w-5 h-5" />
+                     </div>
+                     <div>
+                     <div class="text-xs text-blue-600 font-medium mb-0.5">Min Bid Decrement</div>
+                     <div class="text-sm font-bold text-gray-900">
+                        ₹{{ tender.minBidDecrement?.toLocaleString('en-IN') }}
+                     </div>
+                     </div>
+                  </div>
+
+                  <div class="p-4 bg-green-50 rounded-lg border border-green-100 flex items-center gap-3">
+                     <div class="p-2 bg-green-100 rounded-lg text-green-600">
+                     <Banknote class="w-5 h-5" />
+                     </div>
+                     <div>
+                     <div class="text-xs text-green-600 font-medium mb-0.5">EMD Required</div>
+                     <div class="text-sm font-bold text-gray-900">
+                        ₹{{ tender.emdRequired?.toLocaleString('en-IN') }}
+                     </div>
+                     </div>
+                  </div>
+
+                  <div class="p-4 bg-orange-50 rounded-lg border border-orange-100 flex items-center gap-3">
+                     <div class="p-2 bg-orange-100 rounded-lg text-orange-600">
+                     <Hourglass class="w-5 h-5" />
+                     </div>
+                     <div>
+                     <div class="text-xs text-orange-600 font-medium mb-0.5">Auto Extension</div>
+                     <div class="text-sm font-bold text-gray-900">
+                        {{ tender.autoExtension || '0 mins' }}
+                     </div>
+                     </div>
+                  </div>
+               </div>
+               </div>
 
                 <!-- Terms -->
-                <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                   <h3 class="text-lg font-semibold text-gray-900 mb-4">Terms & Conditions</h3>
-                   <ul class="space-y-4">
-                      <li class="flex items-start gap-4 text-sm text-gray-600 border-b border-gray-50 pb-3 last:border-0 last:pb-0">
-                         <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold ring-1 ring-indigo-100">1</span>
-                         <span class="pt-0.5">Payment: {{ tender.paymentTerms }}</span>
-                      </li>
-                      <li class="flex items-start gap-4 text-sm text-gray-600 border-b border-gray-50 pb-3 last:border-0 last:pb-0">
-                         <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold ring-1 ring-indigo-100">2</span>
-                         <span class="pt-0.5">Delivery: {{ tender.deliveryMode }}</span>
-                      </li>
-                       <li class="flex items-start gap-4 text-sm text-gray-600 border-b border-gray-50 pb-3 last:border-0 last:pb-0">
-                         <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold ring-1 ring-indigo-100">3</span>
-                         <span class="pt-0.5">{{ tender.certification }}</span>
-                      </li>
-                      <li class="flex items-start gap-4 text-sm text-gray-600 border-b border-gray-50 pb-3 last:border-0 last:pb-0">
-                         <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold ring-1 ring-indigo-100">4</span>
-                         <span class="pt-0.5">Website: {{ tender.packaging }}</span>
-                      </li>
-                      <li class="flex items-start gap-4 text-sm text-gray-600 border-b border-gray-50 pb-3 last:border-0 last:pb-0">
-                         <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold ring-1 ring-indigo-100">5</span>
-                         <span class="pt-0.5">Penalty for late delivery: 0.5% per week</span>
-                      </li>
-                       <li class="flex items-start gap-4 text-sm text-gray-600 border-b border-gray-50 pb-3 last:border-0 last:pb-0">
-                         <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold ring-1 ring-indigo-100">6</span>
-                         <span class="pt-0.5">Insurance to be provided by supplier</span>
-                      </li>
-                   </ul>
-                </div>
+               <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+               <h3 class="text-lg font-semibold text-gray-900 mb-4">Terms & Conditions</h3>
+
+               <div 
+                  class="prose prose-sm max-w-none text-gray-600 leading-relaxed" 
+                  v-html="tender.termsData"
+               ></div>
+               </div>
                 
                  <!-- Similar Tenders -->
                  <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">

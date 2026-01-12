@@ -9,6 +9,7 @@ export default defineConfig({
 	plugins: [vue(), tailwindcss()],
 	server: {
 		port: 8080,
+		strictPort: true,
 		proxy: proxyOptions
 	},
 	resolve: {
