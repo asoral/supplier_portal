@@ -6,7 +6,7 @@ import TenderCard from '../components/TenderCard.vue'
 
 const route = useRoute()
 const searchQuery = ref('')
-const viewMode = ref('grid') // 'grid' | 'list'
+const viewMode = ref('grid') 
 const priceRange = ref(5000000)
 const sortBy = ref('Deadline (Soonest)')
 
@@ -16,10 +16,52 @@ const selectedStatus = ref('All')
 const selectedPriority = ref('All')
 const liveBiddingOnly = ref(false)
 
-onMounted(() => {
-  if (route.query.category) {
-    selectedCategory.value = route.query.category
+const tenders = ref([])
+const isLoading = ref(true)
+
+const fetchTenders = async () => {
+  isLoading.value = true
+  try {
+   const response = await fetch('/api/resource/Request for Quotation?' + new URLSearchParams({
+      fields: JSON.stringify([
+        "name", 
+        "custom_rfq_subject", 
+        "custom_rfq_description",
+        "custom_rfq_category",
+        "custom_bid_status", 
+        "custom_total_budget_",
+        "custom_bid_submission_last_date", 
+        "custom_publish_date"
+      ]),
+      filters: JSON.stringify([["custom_publish_on_website", "=", 1]]),
+      limit: 20
+    }))
+
+   const result = await response.json()
+    
+   tenders.value = (result.data || []).map(rfq => ({
+      id: rfq.name,                               
+      title: rfq.custom_rfq_subject,               
+      description: rfq.custom_rfq_description ? rfq.custom_rfq_description.replace(/<[^>]*>?/gm, '') : '', 
+      category: rfq.custom_rfq_category,        
+      status: rfq.custom_bid_status,             
+      budget: rfq.custom_total_budget_,               
+      deadline: rfq.custom_bid_submission_last_date,             
+      publishedDate: rfq.custom_publish_date,
+      
+    }))
+  }catch (error) {
+    console.error("Failed to load tenders:", error)
+  }finally {
+    isLoading.value = false
   }
+}
+
+onMounted(() => {
+   fetchTenders();
+   if (route.query.category) {
+      selectedCategory.value = route.query.category
+   }
 })
 
 
@@ -38,73 +80,6 @@ const statuses = ['All', 'Active', 'Closing Soon', 'Closed']
 const priorities = ['All', 'Urgent', 'High', 'Normal', 'Low']
 
 // Mock Data
-const tenders = ref([
-  {
-    id: 'TND-2024-001',
-    title: 'Industrial Steel Plates - Grade A',
-    description: 'High-quality steel plates for manufacturing heavy machinery components.',
-    category: 'Raw Materials',
-    status: 'Active',
-    priority: 'High',
-    liveBidding: true,
-    budget: 2500000,
-    deadline: '2024-02-15',
-    location: 'Pune, MH',
-    bids: 12
-  },
-  {
-    id: 'TND-2024-003',
-    title: 'Safety Equipment Annual Supply',
-    description: 'Annual rate contract for safety equipment and PPE for 500+ workforce.',
-    category: 'Safety',
-    status: 'Closing Soon',
-    priority: 'Urgent',
-    liveBidding: false,
-    budget: 850000,
-    deadline: '2024-02-10',
-    location: 'Mumbai, MH',
-    bids: 8
-  },
-  {
-    id: 'TND-2024-004',
-    title: 'Electrical Control Panels',
-    description: 'Custom electrical control panels for production line automation upgrade.',
-    category: 'Electrical',
-    status: 'Active',
-    priority: 'Normal',
-    liveBidding: false,
-    budget: 1200000,
-    deadline: '2024-02-20',
-    location: 'Delhi, NCR',
-    bids: 5
-  },
-  {
-    id: 'TND-2024-002',
-    title: 'CNC Machining Center',
-    description: '5-axis CNC vertical machining center for precision components manufacturing.',
-    category: 'Machinery',
-    status: 'Active',
-    priority: 'High',
-    liveBidding: true,
-    budget: 4500000,
-    deadline: '2024-01-25',
-    location: 'Bangalore, KA',
-    bids: 15
-  },
-   {
-    id: 'TND-2024-005',
-    title: 'Industrial Lubricants Package',
-    description: 'Annual contract for supply of industrial lubricants including hydraulic oils, gear oils.',
-    category: 'Consumables',
-    status: 'Active',
-    priority: 'Normal',
-    liveBidding: false,
-    budget: 320000,
-    deadline: '2024-03-15',
-    location: 'Chennai, TN',
-    bids: 3
-  }
-])
 
 const filteredTenders = computed(() => {
   let result = tenders.value.filter(tender => {

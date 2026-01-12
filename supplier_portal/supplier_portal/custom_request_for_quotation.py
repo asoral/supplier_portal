@@ -24,6 +24,14 @@ def validate(doc, method=None):
             
     doc.custom_total_budget_ = total
 
+    total_qty = 0
+    
+    if doc.items:
+        for item in doc.items:
+            total_qty += (item.qty or 0)
+    
+    doc.custom_total_quantity = total_qty
+
 def before_save(doc, method=None):
     # Ensure total budget is saved correctly if updated in JS or otherwise
     validate(doc, method)
