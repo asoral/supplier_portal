@@ -4,11 +4,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { 
   ArrowLeft, BadgeCheck, Clock, Download, Share2, Printer, 
   AlertCircle, DollarSign, Calendar, MapPin, Building2, UserCircle, FileText,
-  TrendingDown, Banknote, Hourglass, Bookmark, ArrowRight, Zap 
+  TrendingDown, Banknote, Hourglass, Bookmark, ArrowRight, Zap , MessageSquare
 } from 'lucide-vue-next'
 
+const goToQueries = () => {
+  router.push('/queries')
+}
 const route = useRoute()
 const router = useRouter()
+<<<<<<< Updated upstream
 const tenderId = route.params.id
 
 // Mock Data (replace with API call)
@@ -57,6 +61,78 @@ const tender = ref({
     { id: 'TND-2024-012', title: 'Industrial Fasteners Bulk Order', budget: '₹4,50,000', deadline: '18 Feb 2024' }
   ]
 })
+=======
+const isLoading = ref(true)
+
+// Initialize tender as null so we can check if data has arrived
+const tender = ref(null)
+
+// API Fetching Logic
+const fetchTenderDetails = async () => {
+  isLoading.value = true
+  try {
+    // Fetches specifically using the ID from the URL (e.g., PUR-RFQ-2026-00001)
+    const response = await fetch(`/api/resource/Request for Quotation/${route.params.id}?fields=["*"]`)
+    const result = await response.json()
+    const data = result.data
+
+    // Map the Frappe API response to your UI variables
+    tender.value = {
+      id: data.name,
+      title: data.custom_rfq_subject,
+      publishedDate: data.custom_publish_date ? new Date(data.custom_publish_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A',
+      location: data.billing_address_display ? data.billing_address_display.replace(/<br\s*\/?>/gi, ', ') : 'N/A',
+      status: data.custom_bid_status,
+      liveBidding: data.custom_bid_status === 'Active',
+      description: data.custom_rfq_description ,
+      quantity: data.custom_total_quantity ,
+      bidsReceived: data.custom_no_of_bids ,
+      estBudget: data.custom_total_budget_ ,
+      deadline: data.custom_bid_submission_last_date 
+    ? new Date(data.custom_bid_submission_last_date).toLocaleString('en-IN', { 
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true 
+      }) 
+    : 'N/A',
+      department: data.custom_department ,
+      currentLowestBid: data.custom_total_budget_ ,
+      liveBidding: data.custom_enable_live_bidding === 1,
+      minBidDecrement: data.custom_min_live_bid_decrement ,
+      emdRequired: data.custom_emd_amount ,
+      termsData: data.terms || 'No terms and conditions provided.',
+      autoExtension: data.custom_auto_extension_limit ,
+      deliveryDate:data.schedule_date,
+      documents: data.custom_downloadable_forms ? [
+        {
+          name: data.custom_downloadable_forms.split('/').pop(),
+          url: data.custom_downloadable_forms, 
+          size: 'File'
+        }
+      ] : [],
+      // Default/Placeholder values for sections not yet in your API
+      paymentTerms: 'As per company policy',
+      deliveryMode: 'FOR Destination',
+      certification: 'Required',
+      packaging: 'Standard',
+      timeline: [
+        { stage: 'Published', date: data.custom_publish_date, completed: true },
+        { stage: 'Submission Ends', date: data.custom_bid_submission_last_date, completed: false }
+      ],
+      // recentBids: [], 
+      similarTenders: (data.similar_tenders || []).map(sim => ({
+         id: sim.name,
+         title: sim.custom_rfq_subject,
+         budget: sim.custom_total_budget_ ? `₹${sim.custom_total_budget_.toLocaleString('en-IN')}` : 'N/A',
+         deadline: sim.custom_bid_submission_last_date ? new Date(sim.custom_bid_submission_last_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : 'N/A'
+      }))
+    }
+  } catch (error) {
+    console.error("Failed to fetch tender details:", error)
+  } finally {
+    isLoading.value = false
+  }
+}
+>>>>>>> Stashed changes
 
 const activeTab = ref('Overview')
 const tabs = ['Overview', 'Specifications', 'Documents', 'Timeline']
@@ -110,6 +186,7 @@ const formattedLowestBid = computed(() => {
                </span>
             </div>
             <h1 class="text-2xl font-bold text-gray-900 mb-2">{{ tender.title }}</h1>
+            <div v-if="tender" class="min-h-screen bg-gray-50 pb-12"></div>
             <div class="flex flex-wrap items-center gap-4 text-xs text-gray-500">
                <span class="flex items-center gap-1"><BadgeCheck class="w-3.5 h-3.5" /> {{ tender.id }}</span>
                <span class="flex items-center gap-1"><Calendar class="w-3.5 h-3.5" /> Published: {{ tender.publishedDate }}</span>
@@ -290,41 +367,31 @@ const formattedLowestBid = computed(() => {
             </div>
 
             <!-- DOCUMENTS TAB -->
-            <div v-if="activeTab === 'Documents'" class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-               <h3 class="text-lg font-semibold text-gray-900 mb-6">Tender Documents</h3>
-               <div class="space-y-3">
-                  <div v-for="(doc, idx) in tender.documents" :key="idx" class="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group">
-                     <div class="flex items-center gap-4">
-                        <div class="p-2 bg-red-50 rounded-lg text-red-500">
-                           <FileText class="w-6 h-6" /> <!-- Using FileText as generic doc icon for now -->
-                        </div>
-                        <div>
-                           <div class="font-medium text-gray-900 group-hover:text-indigo-700">{{ doc.name }}</div>
-                           <div class="text-xs text-gray-500">{{ doc.size }}</div>
-                        </div>
-                     </div>
-                     <button class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-white rounded-full transition-colors shadow-sm">
-                        <Download class="w-4 h-4" />
-                     </button>
-                  </div>
-                   <!-- Extra mock doc for visuals -->
-                  <div class="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group">
-                     <div class="flex items-center gap-4">
-                        <div class="p-2 bg-red-50 rounded-lg text-red-500">
-                           <FileText class="w-6 h-6" />
-                        </div>
-                        <div>
-                           <div class="font-medium text-gray-900 group-hover:text-indigo-700">Size Chart.pdf</div>
-                           <div class="text-xs text-gray-500">250 KB</div>
-                        </div>
-                     </div>
-                     <button class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-white rounded-full transition-colors shadow-sm">
-                        <Download class="w-4 h-4" />
-                     </button>
-                  </div>
-               </div>
-            </div>
+          <div v-if="activeTab === 'Documents'" class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+  <h3 class="text-lg font-semibold text-gray-900 mb-6">Tender Documents</h3>
+  
+  <div v-if="tender.documents && tender.documents.length > 0" class="space-y-3">
+     <div v-for="(doc, idx) in tender.documents" :key="idx" class="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group">
+        <div class="flex items-center gap-4">
+           <div class="p-2 bg-red-50 rounded-lg text-red-500">
+              <FileText class="w-6 h-6" />
+           </div>
+           <div>
+              <div class="font-medium text-gray-900 group-hover:text-indigo-700">{{ doc.name }}</div>
+              <div class="text-xs text-gray-500">{{ doc.size }}</div>
+           </div>
+        </div>
+        <a :href="doc.url" target="_blank" class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-white rounded-full transition-colors shadow-sm">
+           <Download class="w-4 h-4" />
+        </a>
+     </div>
+  </div>
 
+  <div v-else class="flex flex-col items-center justify-center py-12 text-gray-500 border-2 border-dashed border-gray-100 rounded-xl">
+     <FileText class="w-12 h-12 text-gray-200 mb-3" />
+     <p class="text-sm">No downloadable documents available for this tender.</p>
+  </div>
+</div>
             <!-- TIMELINE TAB -->
             <div v-if="activeTab === 'Timeline'" class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
                <h3 class="text-lg font-semibold text-gray-900 mb-6">Tender Timeline</h3>
@@ -371,94 +438,113 @@ const formattedLowestBid = computed(() => {
             
             <!-- Summary Card -->
             <div class="bg-white rounded-xl border border-gray-200 px-6 py-6 shadow-sm relative overflow-hidden">
-               <h3 class="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">Tender Summary</h3>
-               
-               <div class="grid grid-cols-2 gap-y-4 gap-x-2 text-sm mb-6">
-                  <div>
-                     <div class="text-xs text-gray-500 mb-0.5">Quantity</div>
-                     <div class="font-semibold text-gray-900">{{ tender.quantity }}</div>
-                  </div>
-                   <div>
-                     <div class="text-xs text-gray-500 mb-0.5">Bids Received</div>
-                     <div class="font-semibold text-gray-900">{{ tender.bidsReceived }}</div>
-                  </div>
-                   <div>
-                     <div class="text-xs text-gray-500 mb-0.5">Est. Budget</div>
-                     <div class="font-semibold text-gray-900">{{ formattedBudget }}</div>
-                  </div>
-                   <div>
-                     <div class="text-xs text-gray-500 mb-0.5">Delivery Date</div>
-                     <div class="font-semibold text-gray-900">{{ tender.deliveryDate }}</div>
-                  </div>
-               </div>
+   <h3 class="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">Tender Summary</h3>
+   
+   <div class="grid grid-cols-2 gap-y-4 gap-x-2 text-sm mb-6">
+      <div>
+         <div class="text-xs text-gray-500 mb-0.5">Quantity</div>
+         <div class="font-semibold text-gray-900">{{ tender.quantity }}</div>
+      </div>
+      <div>
+         <div class="text-xs text-gray-500 mb-0.5">Bids Received</div>
+         <div class="font-semibold text-gray-900">{{ tender.bidsReceived }}</div>
+      </div>
+      <div>
+         <div class="text-xs text-gray-500 mb-0.5">Est. Budget</div>
+         <div class="font-semibold text-gray-900">{{ formattedBudget }}</div>
+      </div>
+      <div>
+         <div class="text-xs text-gray-500 mb-0.5">Delivery Date</div>
+         <div class="font-semibold text-gray-900">{{ tender.deliveryDate }}</div>
+      </div>
+   </div>
 
-               <div class="pt-4 border-t border-gray-100 mb-6">
-                  <div class="flex items-center gap-2 text-xs text-red-600 mb-1 font-medium">
-                     <Clock class="w-3.5 h-3.5" /> Deadline
-                  </div>
-                  <div class="text-sm font-bold text-gray-900 mb-1">{{ tender.deadline }}</div>
-                   <div class="text-xs text-gray-500">Department: {{ tender.department }}</div>
-               </div>
+   <div class="pt-4 border-t border-gray-100 mb-6">
+      <div class="flex items-center gap-2 text-xs text-red-600 mb-1 font-medium">
+         <Clock class="w-3.5 h-3.5" /> Deadline
+      </div>
+      <div class="text-sm font-bold text-gray-900 mb-1">{{ tender.deadline }}</div>
+      <div class="text-xs text-gray-500">Department: {{ tender.department }}</div>
+   </div>
 
-               <button class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-lg shadow-sm transition-colors mb-3 flex items-center justify-center gap-2">
-                  <BadgeCheck class="w-4 h-4" /> Submit Your Bid
-               </button>
-               <button class="w-full bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 text-sm font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2">
-                  <Download class="w-4 h-4 text-gray-500" /> Download BOQ
-               </button>
-            </div>
+   <button class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-lg shadow-sm transition-colors mb-3 flex items-center justify-center gap-2">
+      <BadgeCheck class="w-4 h-4" /> Submit Your Bid
+   </button>
 
+   <div class="flex items-center gap-2">
+      <a 
+         :href="tender.documents && tender.documents.length > 0 ? tender.documents[0].url : '#'" 
+         target="_blank"
+         class="flex-1 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 text-sm font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm"
+      >
+         <Download class="w-4 h-4 text-gray-500" /> 
+         Download BOQ
+      </a>
+
+      <button 
+         @click="goToQueries"
+         class="bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-100 p-2.5 rounded-lg transition-all flex items-center justify-center shadow-sm"
+         title="View Queries"
+      >
+         <MessageSquare class="w-4 h-4" />
+      </button>
+   </div>
+</div>
             <!-- Live Bidding Card -->
-            <div v-if="tender.liveBidding" class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm ring-1 ring-gray-200">
-                <div class="flex items-center justify-between mb-6">
-                   <div class="inline-flex items-center rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 ring-1 ring-inset ring-red-600/20">
-                      <span class="relative flex h-2 w-2 mr-2">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                        <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                      </span>
-                      Live Bidding Active
-                   </div>
-                   <span class="text-xs text-gray-400">Updated 2s ago</span>
-                </div>
+            <div v-if="tender && tender.liveBidding" class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+               <div class="p-5">
+                  <div class="flex items-center justify-between mb-4">
+                     <div class="flex items-center gap-2 px-2 py-1 bg-red-50 text-red-600 rounded-full text-xs font-bold animate-pulse">
+                        <span class="w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                        Live Bidding Active
+                     </div>
+                     <span class="text-[10px] text-gray-400">Updated 2s ago</span>
+                  </div>
 
-                <div class="text-center py-6 bg-white rounded-xl border-2 border-green-500/20 mb-6 shadow-[0_0_15px_rgba(34,197,94,0.1)]">
-                  <div class="text-xs text-gray-500 font-medium mb-1 uppercase tracking-wider">Current Lowest Bid</div>
-                  <div class="text-3xl font-bold text-green-600 tracking-tight">{{ formattedLowestBid }}</div>
-                   <div class="text-xs font-medium text-green-600 mt-1 flex items-center justify-center gap-1">
-                      <TrendingDown class="w-3 h-3" /> ₹20,000 below budget
-                   </div>
-                </div>
+                  <div class="bg-green-50/50 border border-green-100 rounded-xl p-4 text-center mb-4">
+                     <div class="text-xs text-gray-500 font-medium mb-1">CURRENT LOWEST BID</div>
+                     <div class="text-2xl font-bold text-green-600 mb-1">
+                        {{ formattedLowestBid }}
+                     </div>
+                     <div class="text-[10px] text-green-600 flex items-center justify-center gap-1">
+                        <TrendingDown class="w-3 h-3" />
+                        ₹{{ tender.minBidDecrement.toLocaleString('en-IN') }} below budget
+                     </div>
+                  </div>
 
-                <div class="space-y-4">
-                   <div>
-                      <label class="text-xs font-semibold text-gray-700 mb-2 block">Enter Your Bid Amount</label>
-                      <div class="flex gap-2">
-                         <div class="relative flex-grow">
-                            <span class="absolute left-3 top-2.5 text-gray-400">₹</span>
-                            <input v-model="bidAmount" type="number" class="w-full pl-7 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400" placeholder="Enter amount">
-                         </div>
-                         <button @click="placeBid" class="bg-amber-400 hover:bg-amber-500 text-amber-950 px-6 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors whitespace-nowrap">Place Bid</button>
-                      </div>
-                   </div>
-                   
-                   <button @click="quickBid(tender.minBidDecrement)" class="w-full group flex items-center justify-center gap-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 text-xs font-semibold py-2.5 rounded-lg transition-all">
-                      <Zap class="w-3 h-3 text-amber-500 group-hover:text-amber-600" />
-                      Quick bid: ₹{{ (tender.currentLowestBid - tender.minBidDecrement).toLocaleString() }}
-                   </button>
-                </div>
+                  <div class="space-y-3">
+                     <div class="flex gap-2">
+                        <div class="relative flex-1">
+                           <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">₹</span>
+                           <input 
+                              v-model="bidAmount"
+                              type="number" 
+                              placeholder="Enter amount"
+                              class="w-full pl-7 pr-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-sm"
+                           />
+                        </div>
+                        <button 
+                           @click="placeBid"
+                           class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg transition-colors text-sm"
+                        >
+                           Place Bid
+                        </button>
+                     </div>
 
-                <div class="mt-8 pt-6 border-t border-gray-100">
-                   <h4 class="text-xs font-bold text-gray-900 mb-4">Recent Bid Activity</h4>
-                   <div class="space-y-3">
-                      <div v-for="(bid, idx) in tender.recentBids" :key="idx" class="flex items-center justify-between text-xs pb-3 border-b border-gray-50 last:border-0 last:pb-0">
-                         <span class="font-medium text-gray-600">{{ bid.vendor }}</span>
-                         <div class="text-right">
-                            <div class="font-bold text-green-600">₹{{ bid.amount.toLocaleString() }}</div>
-                            <span class="text-gray-400 text-[10px]">{{ bid.time }}</span>
-                         </div>
-                      </div>
-                   </div>
-                </div>
+                     <button 
+                        @click="quickBid(tender.minBidDecrement)"
+                        class="w-full py-2 border border-dashed border-gray-200 rounded-lg text-xs text-gray-500 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                     >
+                        <Zap class="w-3 h-3 text-amber-500" />
+                        Quick bid: ₹{{ (tender.currentLowestBid - tender.minBidDecrement).toLocaleString('en-IN') }}
+                     </button>
+                  </div>
+
+                  <div class="mt-6 pt-6 border-t border-gray-100">
+                     <div class="text-xs font-bold text-gray-900 mb-3 uppercase tracking-wider">Recent Bid Activity</div>
+                     <div class="text-xs text-center py-4 text-gray-400 italic">No recent bids yet</div>
+                  </div>
+               </div>
             </div>
 
             <!-- Help Box -->

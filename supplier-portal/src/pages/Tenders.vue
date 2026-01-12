@@ -16,7 +16,94 @@ const selectedStatus = ref('All')
 const selectedPriority = ref('All')
 const liveBiddingOnly = ref(false)
 
+<<<<<<< Updated upstream
 onMounted(() => {
+=======
+const tenders = ref([])
+const isLoading = ref(true)
+
+const fetchTenders = async () => {
+  isLoading.value = true
+  try {
+    const userEmail = frappe.session.user;
+    let filters = [];
+
+    // PATH 1: USER IS A GUEST (Not signed in)
+    if (!userEmail || userEmail === 'Guest') {
+      filters = [
+        ["custom_publish_on_website", "=", 1],
+        ["docstatus", "=", 1]
+      ];
+    } 
+    // PATH 2: USER IS SIGNED IN
+    else {
+      // First, get the Supplier name for the logged-in user
+      const userRes = await fetch('/api/method/frappe.client.get_value?' + new URLSearchParams({
+        doctype: 'Contact',
+        filters: JSON.stringify({ email_id: userEmail }),
+        fieldname: 'supplier'
+      }))
+      const userResult = await userRes.json()
+      const mySupplierName = userResult.message?.supplier
+
+      if (mySupplierName) {
+        // Only show RFQs where this specific supplier exists in the child table
+        filters = [
+          ["docstatus", "=", 1],
+          ["RFQ Supplier", "supplier", "=", mySupplierName]
+        ];
+      } else {
+        // Fallback: If logged in but no supplier link found, show only public
+        filters = [["custom_publish_on_website", "=", 1], ["docstatus", "=", 1]];
+      }
+    }
+
+    const response = await fetch(
+      `/api/resource/Request%20for%20Quotation?${new URLSearchParams({
+        fields: JSON.stringify([
+          "name",
+          "custom_rfq_subject",
+          "custom_rfq_description",
+          "custom_rfq_category",
+          "custom_bid_status",
+          "custom_total_budget_",
+          "custom_bid_submission_last_date",
+          "custom_publish_date",
+          "custom_publish_on_website"
+        ]),
+        filters: JSON.stringify([
+        ["custom_publish_on_website", "=", 1],
+        ["RFQ Supplier", "supplier", "=", mySupplierName]
+      ]),
+      limit: 20
+      })}`
+    )
+
+    const result = await response.json()
+
+    tenders.value = (result.data || []).map(rfq => ({
+      id: rfq.name,
+      title: rfq.custom_rfq_subject,
+      description: rfq.custom_rfq_description
+        ? rfq.custom_rfq_description.replace(/<[^>]*>?/gm, "")
+        : "",
+      category: rfq.custom_rfq_category,
+      status: rfq.custom_bid_status,
+      budget: rfq.custom_total_budget_,
+      deadline: rfq.custom_bid_submission_last_date,
+      publishedDate: rfq.custom_publish_date,
+      isPrivate: rfq.custom_publish_on_website === 0
+    }))
+  } catch (error) {
+    console.error("Failed to load tenders:", error)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(() => {
+  fetchTenders()
+>>>>>>> Stashed changes
   if (route.query.category) {
     selectedCategory.value = route.query.category
   }
