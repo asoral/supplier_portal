@@ -4,22 +4,22 @@
     "doctype": "DocType",
     "engine": "InnoDB",
     "field_order": [
-        "supplier",
-        "rfq"
+        "rfq",
+        "supplier"
     ],
     "fields": [
-        {
-            "fieldname": "supplier",
-            "fieldtype": "Link",
-            "label": "Supplier",
-            "options": "Supplier",
-            "reqd": 1
-        },
         {
             "fieldname": "rfq",
             "fieldtype": "Link",
             "label": "RFQ",
             "options": "Request for Quotation",
+            "reqd": 1
+        },
+        {
+            "fieldname": "supplier",
+            "fieldtype": "Link",
+            "label": "Supplier",
+            "options": "Supplier",
             "reqd": 1
         }
     ],

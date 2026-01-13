@@ -63,11 +63,11 @@ export const useAuthStore = defineStore('auth', () => {
             const data = await response.json()
 
             if (response.ok && data.message === 'Logged In') {
-                // Fetch full details including Company Name
+                // Fetch full details including Company Name (Custom logic retained for functionality)
                 const fullUser = await fetchUserDetails(credentials.email);
 
                 user.value = {
-                    ...fullUser,
+                    ...fullUser, // Includes name, email, company, supplierId
                     home_page: data.home_page
                 }
                 token.value = 'frappe-session-' + Date.now()
@@ -108,8 +108,6 @@ export const useAuthStore = defineStore('auth', () => {
             const result = await response.json()
 
             if (result.message && result.message.status === 'success') {
-                // Auto login after signup? Or return success.
-                // The original code just returned success message.
                 return { success: true, message: result.message.message }
             } else {
                 const errMsg = (result.message && result.message.message) || result.message || 'Registration failed'
@@ -117,20 +115,19 @@ export const useAuthStore = defineStore('auth', () => {
             }
         } catch (error) {
             console.error("Registration Error:", error)
-            // Fallback to mock for testing if server fails? No, better to fail real API.
-            // But user's snippet had a mock signup. I will stick to Real API if possible, 
-            // but if the user demanded the snippet exactly, I might have issues.
-            // The user said "thsi api use", implying the structure.
-            // I'll return false/error.
             throw error;
         }
     }
 
     const logout = async () => {
         try {
+            // User requested POST for logout
             await fetch('/api/method/logout', {
-                method: 'GET',
+                method: 'POST',
                 credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
             })
         } catch (error) {
             console.error('Logout error:', error)
@@ -170,12 +167,13 @@ export const useAuthStore = defineStore('auth', () => {
 
             if (response.ok) {
                 const data = await response.json();
+                const serverUser = data.message;
 
-                // Case A: Server says we are logged in
-                if (data.message && data.message !== 'Guest') {
+                // Case A: Server says we are logged in (not Guest)
+                if (serverUser && serverUser !== 'Guest') {
                     // If we don't have user data in memory, or if it doesn't match, fetch and update
-                    if (!user.value || user.value.email !== data.message) {
-                        const fullUser = await fetchUserDetails(data.message);
+                    if (!user.value || user.value.email !== serverUser) {
+                        const fullUser = await fetchUserDetails(serverUser);
                         user.value = {
                             ...fullUser,
                             home_page: '/app' // Default or fetch if needed
@@ -188,23 +186,32 @@ export const useAuthStore = defineStore('auth', () => {
                     }
                     return; // Sync complete
                 }
-            }
 
-            // Case B: Server says 'Guest' or request failed -> Clear everything
-            // This handles the "Vice Versa" case: Logged out in Desk -> Auto logs out in Portal
-            user.value = null
-            token.value = null
-            localStorage.removeItem('auth_user')
-            localStorage.removeItem('auth_token')
+                // Case B: Server says 'Guest' -> We must be logged out
+                // If we have local state, clear it (Sync Logout)
+                if (user.value || localStorage.getItem('auth_user')) {
+                    console.log("Server reports Guest, clearing local session.");
+                    user.value = null
+                    token.value = null
+                    localStorage.removeItem('auth_user')
+                    localStorage.removeItem('auth_token')
+                    // Optional: Redirect to login if currently on a protected route?
+                    // router.push('/login') // requires router access
+                }
+            } else {
+                // Response not OK (e.g. 500 error), assume logged out or keep state?
+                // Safer to do nothing or retry, but if 401/403, definitely logout.
+                if (response.status === 401 || response.status === 403) {
+                    user.value = null;
+                    token.value = null;
+                    localStorage.removeItem('auth_user');
+                    localStorage.removeItem('auth_token');
+                }
+            }
 
         } catch (e) {
             console.warn("Auth check failed, falling back to local state if offline", e);
             // Fallback: If network error, maybe trust local storage? 
-            // Better to stay safe and assume not authenticated if we can't reach server?
-            // unique decision: trust local if offline, but mostly we assume online.
-            // For now, let's just leave it. If checking user fails, we might be offline. 
-            // Loading 'auth_user' from storage is a risk if session expired.
-            // But let's load it just in case, but user might experience 403s on APIs.
             const storedUser = localStorage.getItem('auth_user')
             const storedToken = localStorage.getItem('auth_token')
             if (storedUser && storedToken) {

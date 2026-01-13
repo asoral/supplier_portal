@@ -348,3 +348,109 @@ def get_dashboard_stats():
         
     finally:
         frappe.set_user(original_user)
+
+@frappe.whitelist()
+def get_saved_tenders():
+    user = frappe.session.user
+    if user == "Guest":
+        return []
+
+    original_user = frappe.session.user
+    frappe.set_user("Administrator")
+    
+    try:
+        # 1. Get linked suppliers
+        suppliers = frappe.get_all("Portal User", 
+                                filters={"user": user, "parenttype": "Supplier"}, 
+                                fields=["parent"])
+        supplier_names = [s.parent for s in suppliers]
+
+        if not supplier_names:
+            return []
+
+        # 2. Get Saved RFQs linked to these suppliers
+        placeholders = ', '.join(['%s'] * len(supplier_names))
+        
+        sql = f"""
+            SELECT 
+                saved.name as saved_id,
+                saved.creation as saved_date,
+                rfq.name as rfq_id,
+                rfq.custom_rfq_subject as title,
+                rfq.custom_rfq_category as category,
+                rfq.custom_total_budget_ as value,
+                rfq.custom_bid_submission_last_date as deadline,
+                rfq.custom_bid_status as status,
+                rfq.status as rfq_docstatus
+            FROM `tabSaved RFQ` saved
+            JOIN `tabRequest for Quotation` rfq ON saved.rfq = rfq.name
+            WHERE saved.supplier IN ({placeholders})
+            AND rfq.docstatus < 2 
+            ORDER BY saved.creation DESC
+        """
+        
+        data = frappe.db.sql(sql, tuple(supplier_names), as_dict=True)
+        
+        # Format for frontend
+        formatted_data = []
+        for row in data:
+            # Check deadline
+            deadline_status = ""
+            deadline_str = ""
+            if row.deadline:
+                from frappe.utils import getdate, today
+                deadline_date = getdate(row.deadline)
+                deadline_str = deadline_date.strftime("%d %b %Y")
+                if deadline_date < getdate(today()):
+                     deadline_status = "Deadline passed"
+            
+            # Count bids (optional)
+            bids_count = frappe.db.count("Supplier Quotation", {"request_for_quotation": row.rfq_id, "docstatus": 1})
+
+            formatted_data.append({
+                "id": row.rfq_id,
+                "saved_id": row.saved_id,
+                "title": row.title or row.rfq_id,
+                "category": row.category or "General",
+                "value": row.value or 0,
+                "deadline": deadline_str,
+                "savedOn": row.saved_date.strftime("%d %b %Y"),
+                "status": row.status or "Active",
+                "alerts": False, 
+                "deadlineStatus": deadline_status,
+                "bids": bids_count
+            })
+            
+        return formatted_data
+
+    except Exception as e:
+        frappe.log_error(f"Get Saved Tenders Error: {str(e)}")
+        return []
+    finally:
+        frappe.set_user(original_user)
+
+@frappe.whitelist()
+def delete_saved_tender(saved_id):
+    user = frappe.session.user
+    if user == "Guest":
+        return {"status": "error", "message": "Unauthorized"}
+        
+    try:
+        # Check permission: belongs to a supplier user is linked to
+        if not frappe.db.exists("Saved RFQ", saved_id):
+            return {"status": "error", "message": "Document not found"}
+
+        saved_doc = frappe.get_doc("Saved RFQ", saved_id)
+        supplier = saved_doc.supplier
+        
+        is_linked = frappe.db.exists("Portal User", {"parent": supplier, "user": user})
+        
+        if not is_linked and user != "Administrator":
+             return {"status": "error", "message": "Permission Denied"}
+             
+        frappe.delete_doc("Saved RFQ", saved_id)
+        return {"status": "success", "message": "Removed from Saved"}
+        
+    except Exception as e:
+         frappe.log_error(f"Delete Saved Tender Error: {str(e)}")
+         return {"status": "error", "message": str(e)}
