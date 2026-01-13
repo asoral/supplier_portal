@@ -20,9 +20,10 @@ import {
   TrendingUp,
   FileCheck
 } from 'lucide-vue-next'
-import { useAuth } from '../auth.js'
+import { useAuthStore } from '../stores/auth'
 
-const { state } = useAuth()
+const authStore = useAuthStore()
+const state = authStore
 const activeTab = ref('Company')
 const tabs = ['Company', 'Documents', 'Certifications', 'Settings']
 

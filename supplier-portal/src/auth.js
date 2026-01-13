@@ -9,26 +9,32 @@ const state = reactive({
 const fetchUserDetails = async (email) => {
     try {
         // 1. Fetch User details
-        const userRes = await fetch(`/api/resource/User/${email}`, { credentials: 'include' });
+        const userRes = await fetch(`/api/resource/User/${email}?t=${Date.now()}`, { credentials: 'include', cache: 'no-store' });
         const userDoc = await userRes.json();
         const fullName = userDoc.data?.full_name || email;
 
         // 2. Fetch Supplier details (if connected)
         try {
-            const supplierRes = await fetch(`/api/resource/Supplier?filters=[["email_id","=", "${email}"]]&fields=["name", "supplier_name"]`, { credentials: 'include' });
+            // Use custom API to get supplier based on child table linkage
+            const supplierRes = await fetch(`/api/method/supplier_portal.api.get_supplier_details`, { credentials: 'include' });
             const supplierData = await supplierRes.json();
 
             let company = 'Vendor';
-            if (supplierData.data && supplierData.data.length > 0) {
-                company = supplierData.data[0].supplier_name;
+            let supplierId = null;
+
+            if (supplierData.message && Object.keys(supplierData.message).length > 0) {
+                company = supplierData.message.supplier_name;
+                supplierId = supplierData.message.name;
             }
 
             return {
                 name: fullName,
                 email: email,
-                company: company
+                company: company,
+                supplierId: supplierId
             };
         } catch (sErr) {
+            console.warn("Supplier fetch error", sErr);
             return { name: fullName, email, company: 'Vendor' };
         }
 
@@ -50,10 +56,16 @@ const getCsrfFromCookie = () => {
 // Initialize state from existing session if possible
 const init = async () => {
     try {
-        const response = await fetch('/api/method/frappe.auth.get_logged_user', {
+        const response = await fetch(`/api/method/frappe.auth.get_logged_user?t=${Date.now()}`, {
             method: 'GET',
             credentials: 'include',
-            headers: { 'Accept': 'application/json' }
+            cache: 'no-store',
+            headers: {
+                'Accept': 'application/json',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
         })
 
         // Capture CSRF Token from response header
@@ -175,7 +187,7 @@ const register = async (data) => {
 }
 
 // Call init on load
-init()
+const authPromise = init()
 
 export const useAuth = () => {
     return {
@@ -183,6 +195,7 @@ export const useAuth = () => {
         isLoggedIn,
         login,
         logout,
-        register
+        register,
+        authPromise // Export this
     }
 }

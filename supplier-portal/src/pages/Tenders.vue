@@ -22,24 +22,15 @@ const isLoading = ref(true)
 const fetchTenders = async () => {
   isLoading.value = true
   try {
-   const response = await fetch('/api/resource/Request for Quotation?' + new URLSearchParams({
-      fields: JSON.stringify([
-        "name", 
-        "custom_rfq_subject", 
-        "custom_rfq_description",
-        "custom_rfq_category",
-        "custom_bid_status", 
-        "custom_total_budget_",
-        "custom_bid_submission_last_date", 
-        "custom_publish_date"
-      ]),
-      filters: JSON.stringify([["custom_publish_on_website", "=", 1]]),
-      limit: 20
-    }))
+    // Use custom API to fetch tenders with correct server-side filtering
+    const response = await fetch('/api/method/supplier_portal.api.get_active_tenders?' + new URLSearchParams({
+       limit: 20
+     }))
 
-   const result = await response.json()
+    const result = await response.json()
+    const data = result.message || []
     
-   tenders.value = (result.data || []).map(rfq => ({
+   tenders.value = data.map(rfq => ({
       id: rfq.name,                               
       title: rfq.custom_rfq_subject,               
       description: rfq.custom_rfq_description ? rfq.custom_rfq_description.replace(/<[^>]*>?/gm, '') : '', 
@@ -48,7 +39,8 @@ const fetchTenders = async () => {
       budget: rfq.custom_total_budget_,               
       deadline: rfq.custom_bid_submission_last_date,             
       publishedDate: rfq.custom_publish_date,
-      
+      // Check for live bidding enablement
+      liveBidding: rfq.custom_bid_status === 'Active' && rfq.custom_enable_live_bidding
     }))
   }catch (error) {
     console.error("Failed to load tenders:", error)
@@ -65,16 +57,28 @@ onMounted(() => {
 })
 
 
-const categories = [
-  { name: 'All', count: 6 },
-  { name: 'Raw Materials', count: 2 },
-  { name: 'Machinery', count: 1 },
-  { name: 'Consumables', count: 1 },
-  { name: 'Electrical', count: 1 },
-  { name: 'Safety', count: 1 },
-  { name: 'Packaging', count: 0 },
-  { name: 'Chemicals', count: 0 },
-]
+const categories = computed(() => {
+  const counts = {} // { 'Raw Materials': 2, ... }
+  tenders.value.forEach(t => {
+      const cat = t.category || 'Uncategorized';
+      counts[cat] = (counts[cat] || 0) + 1;
+  })
+
+  // Basic list from counts
+  const list = Object.keys(counts).map(name => ({
+      name: name,
+      count: counts[name]
+  }));
+
+  // Add 'All' or ensure known categories are present? 
+  // For now let's just list what is available + 'All'
+  // Or keep the predefined list for UI structure but update counts?
+  // Let's go with dynamic list to avoid "hard coded data" complaint strictly.
+  
+  const allCount = tenders.value.length;
+  // Prepend All
+  return [{ name: 'All', count: allCount }, ...list];
+})
 
 const statuses = ['All', 'Active', 'Closing Soon', 'Closed']
 const priorities = ['All', 'Urgent', 'High', 'Normal', 'Low']

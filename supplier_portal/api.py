@@ -64,3 +64,287 @@ def register_vendor(company_name, email, contact_person, phone, gst=None, passwo
     except Exception as e:
         frappe.log_error("Vendor Registration Error")
         return {"status": "error", "message": str(e)}
+
+@frappe.whitelist()
+def get_supplier_details():
+    user = frappe.session.user
+    if user == "Guest":
+        return {}
+    
+    # Infer child doctype for portal_users
+    meta = frappe.get_meta("Supplier")
+    field = meta.get_field("portal_users")
+    if not field:
+        return {}
+    
+    child_doctype = field.options
+    
+    suppliers = frappe.get_all("Supplier", filters={
+        "name": ["in", frappe.get_all(child_doctype, filters={"user": user}, pluck="parent")]
+    }, fields=["name", "supplier_name", "email_id"])
+    
+    if suppliers:
+        return suppliers[0]
+        
+    return {}
+
+@frappe.whitelist(allow_guest=True)
+def get_active_tenders(limit=20, offset=0):
+    user = frappe.session.user
+    limit = int(limit)
+    offset = int(offset)
+    
+    # Context switch to Admin to ensure we can read all necessary headers/child tables
+    original_user = frappe.session.user
+    frappe.set_user("Administrator")
+    
+    invited_rfq_names = []
+    
+    try:
+        if user != "Guest":
+            # 1. Broadly find all Suppliers this user is linked to
+            # We don't filter by parenttype to be safe, assuming 'parent' is the Supplier
+            suppliers = [s.parent for s in frappe.get_all("Portal User", filters={"user": user}, fields=["parent"])]
+            
+            if suppliers:
+                # 2. Find all RFQs inviting these suppliers
+                invited_rfq_names = [r.parent for r in frappe.get_all("Request for Quotation Supplier", 
+                                                                    filters={"supplier": ["in", suppliers]}, 
+                                                                    fields=["parent"])]
+    except Exception as e:
+        frappe.log_error(f"Active Tenders Permission Error: {str(e)}")
+        # Continue to at least show public tenders
+        pass
+    finally:
+        frappe.set_user(original_user)
+        
+    # 3. Construct SQL for data fetching
+    # We pass the list of allowed private RFQs to the query
+    
+    # Handle the 'IN' clause safely
+    if invited_rfq_names:
+        in_placeholder = ', '.join(['%s'] * len(invited_rfq_names))
+        private_condition = f"OR name IN ({in_placeholder})"
+        query_values = invited_rfq_names + [limit, offset]
+    else:
+        private_condition = "OR 1=0" # False condition if no invites
+        query_values = [limit, offset]
+
+    sql = f"""
+        SELECT 
+            name,
+            COALESCE(custom_rfq_subject, name) as custom_rfq_subject,
+            custom_rfq_description, 
+            custom_rfq_category,
+            custom_bid_status, 
+            custom_total_budget_, 
+            custom_bid_submission_last_date,
+            custom_publish_date, 
+            custom_enable_live_bidding, 
+            transaction_date, 
+            status,
+            custom_publish_on_website
+        FROM `tabRequest for Quotation`
+        WHERE docstatus < 2
+        AND (
+            custom_publish_on_website = 1
+            {private_condition}
+        )
+        ORDER BY modified DESC
+        LIMIT %s OFFSET %s
+    """
+    
+    try:
+        data = frappe.db.sql(sql, tuple(query_values), as_dict=True)
+    except Exception as e:
+        frappe.log_error("Get Active Tenders SQL Error", str(e))
+        return []
+
+    return data
+
+@frappe.whitelist(allow_guest=True)
+def get_tender_details(name):
+    from frappe import _
+    # Security/Permission Check
+    user = frappe.session.user
+    
+    has_access = False
+    
+    # Check if published (Allow Draft/Submitted)
+    is_published = frappe.db.get_value("Request for Quotation", name, "custom_publish_on_website")
+    if is_published:
+        has_access = True
+    elif user != "Guest":
+        # Check if user is linked to a supplier invited to this RFQ
+        supplier_details = get_supplier_details()
+        if supplier_details:
+             supplier = supplier_details.get("name")
+             # Check if this supplier is in the RFQ's supplier list child table
+             # Field: suppliers (standard) -> Doctype: Request for Quotation Supplier (standard)
+             if frappe.db.exists("Request for Quotation Supplier", {"parent": name, "supplier": supplier}):
+                 has_access = True
+    
+    if not has_access:
+        frappe.throw(_("You do not have permission to view this Tender"), frappe.PermissionError)
+
+    # Bypass standard permission checks since we have validated access via custom logic
+    # This allows Guests/Suppliers to view the doc even if they don't have direct DocType read permissions
+    original_user = frappe.session.user
+    frappe.set_user("Administrator")
+    try:
+        doc = frappe.get_doc("Request for Quotation", name)
+    finally:
+        frappe.set_user(original_user)
+    
+    # Prepare Items / Specs
+    items = []
+    for item in doc.items:
+        items.append({
+            "item_code": item.item_code,
+            "item_name": item.item_name,
+            "description": item.description,
+            "qty": item.qty,
+            "uom": item.uom,
+            "image": item.image,
+            "budget": item.custom_budget,
+            "budget_amount": item.custom_budget_amount,
+            "attach_boq": item.custom_attach_boq
+        })
+        
+    # Calculate Total Quantity from items
+    total_qty = sum([item.qty for item in doc.items])
+
+    # Get Attachments (Standard Files)
+    attachments = frappe.db.get_all("File", 
+        filters={"attached_to_name": name, "attached_to_doctype": "Request for Quotation", "is_private": 0},
+        fields=["file_name", "file_url", "file_size"]
+    )
+    
+    # Add custom_downloadable_forms if exists
+    if doc.get("custom_downloadable_forms"):
+        attachments.append({
+            "file_name": "Tender Form", # Label for the main form
+            "file_url": doc.get("custom_downloadable_forms"),
+            "file_size": "-" 
+        })
+    
+    # Map fields dynamically with safety checks
+    return {
+        "name": doc.name,
+        "title": doc.get("custom_rfq_subject") or doc.name,
+        "description": doc.get("custom_rfq_description"),
+        "category": doc.get("custom_rfq_category"),
+        "status": doc.get("custom_bid_status"),
+        "total_quantity": total_qty, 
+        "total_budget": doc.get("custom_total_budget_"),
+        "submission_date": doc.get("custom_bid_submission_last_date"),
+        "submission_start_date": doc.get("custom_bid_submission_start_date"),
+        "result_date": doc.get("custom_result_date"),
+        "publish_date": doc.get("custom_publish_date"),
+        "min_bid_decrement": doc.get("custom_min_live_bid_decrement"),
+        "emd_amount": doc.get("custom_emd_amount"),
+        "auto_extension_limit": doc.get("custom_auto_extension_limit"), # Use get to avoid error if missing
+        "department": doc.get("custom_department"),
+        "contact_person": doc.get("custom_contact_person"), 
+        "contact_display": doc.get("custom_contact_display"),
+        "billing_address": doc.get("billing_address_display") or doc.get("custom_address_display"),
+        "terms": doc.terms,
+        "items": items,
+        "documents": attachments,
+        "enable_live_bidding": doc.get("custom_enable_live_bidding"),
+        # Timelines
+        "transaction_date": doc.transaction_date, 
+        "schedule_date": doc.schedule_date
+    }
+
+@frappe.whitelist()
+def get_dashboard_stats():
+    user = frappe.session.user
+    if user == "Guest":
+        return {"error": "Not logged in"}
+    
+    # Context switch to Admin for full visibility
+    original_user = frappe.session.user
+    frappe.set_user("Administrator")
+    
+    try:
+        # 1. Find ALL Suppliers linked to this user
+        suppliers = frappe.get_all("Portal User", 
+                                 filters={"user": user, "parenttype": "Supplier"}, 
+                                 fields=["parent"])
+        
+        if not suppliers:
+            return {"error": "No supplier linked"}
+            
+        supplier_names = [s.parent for s in suppliers]
+        
+        # 2. Aggregate Stats across all linked suppliers
+        
+        # Total Bids (Supplier Quotations)
+        total_bids = frappe.db.count("Supplier Quotation", filters={"supplier": ["in", supplier_names], "docstatus": ["<", 2]})
+        
+        # Orders Won (Purchase Orders)
+        orders_won = frappe.db.count("Purchase Order", filters={"supplier": ["in", supplier_names], "docstatus": 1})
+        
+        # Pending Review (Supplier Quotation Submitted count - assuming 'Submitted' status)
+        pending_review = frappe.db.count("Supplier Quotation", filters={"supplier": ["in", supplier_names], "status": "Submitted"})
+        
+        # Win Rate
+        win_rate = 0
+        if total_bids > 0:
+            win_rate = int((orders_won / total_bids) * 100)
+        
+        # 3. Recent Bids (Fetch for ANY of the suppliers)
+        placeholders = ', '.join(['%s'] * len(supplier_names))
+        recent_bids_data = frappe.db.sql(f"""
+            SELECT 
+                sq.name, sq.transaction_date, sq.grand_total, sq.status, 
+                rfq.custom_rfq_subject as title, sq.request_for_quotation
+            FROM `tabSupplier Quotation` sq
+            LEFT JOIN `tabRequest for Quotation` rfq ON sq.request_for_quotation = rfq.name
+            WHERE sq.supplier IN ({placeholders}) AND sq.docstatus < 2
+            ORDER BY sq.transaction_date DESC
+            LIMIT 5
+        """, tuple(supplier_names), as_dict=True)
+        
+        # Format Recent Bids
+        recent_bids = []
+        for bid in recent_bids_data:
+            status_color = "bg-gray-100 text-gray-800"
+            if bid.status == "Ordered":
+                status_color = "bg-green-100 text-green-800"
+            elif bid.status == "Submitted":
+                status_color = "bg-yellow-100 text-yellow-800"
+            elif bid.status == "Lost":
+                status_color = "bg-red-100 text-red-800"
+                
+            recent_bids.append({
+                "title": bid.title or bid.request_for_quotation or bid.name,
+                "id": bid.name,
+                "amount": bid.grand_total,
+                "date": bid.transaction_date,
+                "status": bid.status,
+                "statusColor": status_color
+            })
+            
+        # Get primary supplier name(s) for display
+        display_supplier_name = ", ".join(supplier_names)
+        
+        return {
+            "stats": {
+                "total_bids": total_bids,
+                "orders_won": orders_won,
+                "pending_review": pending_review,
+                "win_rate": f"{win_rate}%"
+            },
+            "recent_bids": recent_bids,
+            "supplier_name": display_supplier_name,
+            "user_name": frappe.db.get_value("User", user, "full_name") or user
+        }
+
+    except Exception as e:
+        frappe.log_error(f"Dashboard Stats Error: {str(e)}")
+        return {"error": "Error fetching dashboard data"}
+        
+    finally:
+        frappe.set_user(original_user)

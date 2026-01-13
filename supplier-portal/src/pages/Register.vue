@@ -1,11 +1,12 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuth } from '../auth.js'
+import { useAuthStore } from '../stores/auth'
 import { CheckCircle, Building2 } from 'lucide-vue-next'
 
 const router = useRouter()
-const { register } = useAuth()
+const authStore = useAuthStore()
+const register = authStore.signup
 
 const formData = ref({
    companyName: '',

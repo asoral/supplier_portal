@@ -1,18 +1,20 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuth } from '../auth.js'
+import { computed } from 'vue'
+import { useAuthStore } from '../stores/auth'
 import { Lock, Mail, Info } from 'lucide-vue-next'
 
 const router = useRouter()
-const { login, isLoggedIn } = useAuth()
+const authStore = useAuthStore()
+
 const email = ref('supplier@techsolutions.com')
 const password = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
 
 const redirectIfLoggedIn = () => {
-  if (isLoggedIn.value) {
+  if (authStore.isAuthenticated) {
     router.push('/dashboard')
   }
 }
@@ -21,7 +23,7 @@ onMounted(() => {
   redirectIfLoggedIn()
 })
 
-watch(isLoggedIn, (newVal) => {
+watch(() => authStore.isAuthenticated, (newVal) => {
   if (newVal) {
     router.push('/dashboard')
   }
@@ -32,7 +34,7 @@ const handleLogin = async (e) => {
   loading.value = true
   errorMsg.value = ''
   try {
-     const user = await login(email.value, password.value)
+     const user = await authStore.login({ email: email.value, password: password.value })
      
      // Handle redirect
      const redirect = router.currentRoute.value.query.redirect

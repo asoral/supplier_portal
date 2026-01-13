@@ -2,10 +2,13 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Menu, X, Bell, User, ChevronDown, FileText, FileCode, Webhook, HelpCircle, Package, Truck, MessageSquare, Bookmark, LogOut, Settings, LayoutDashboard } from 'lucide-vue-next'
-import { useAuth } from '../auth.js'
+import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
-const { isLoggedIn, logout, state } = useAuth()
+const authStore = useAuthStore()
+const isLoggedIn = computed(() => authStore.isAuthenticated)
+const logout = authStore.logout
+const state = authStore
 const isOpen = ref(false)
 const isProfileOpen = ref(false)
 const isNotificationsOpen = ref(false)

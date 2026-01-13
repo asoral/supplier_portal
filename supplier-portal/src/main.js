@@ -8,7 +8,11 @@ import router from './router';
 // import socket from "../../../doppio/libs/controllers/socket";
 // import Auth from "../../../doppio/libs/controllers/auth";
 
+import { createPinia } from 'pinia'
+
 const app = createApp(App);
+const pinia = createPinia()
+app.use(pinia)
 // const auth = reactive(new Auth());
 
 app.use(router);

@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { 
   Trophy, 
   FileText, 
@@ -15,68 +15,85 @@ import {
   PieChart,
   BarChart3
 } from 'lucide-vue-next'
-import { useAuth } from '../auth.js'
+import { useAuthStore } from '../stores/auth'
 
-const { state } = useAuth()
+const authStore = useAuthStore()
 const activeTab = ref('Overview')
+const isLoading = ref(true)
 
-const stats = [
+const dashboardData = ref({
+    stats: {
+        total_bids: 0,
+        orders_won: 0,
+        pending_review: 0,
+        win_rate: '0%'
+    },
+    recent_bids: [],
+    supplier_name: '',
+    user_name: ''
+})
+
+const fetchDashboardStats = async () => {
+    try {
+        const response = await fetch('/api/method/supplier_portal.api.get_dashboard_stats', { credentials: 'include' })
+        const result = await response.json()
+        if (result.message && !result.message.error) {
+            dashboardData.value = result.message
+        }
+    } catch (e) {
+        console.error("Failed to fetch dashboard stats", e)
+    } finally {
+        isLoading.value = false
+    }
+}
+
+const stats = ref([
   { 
     name: 'Total Bids', 
-    value: '6', 
+    value: '0', 
     icon: FileText, 
-    change: '15%', 
+    change: '-', 
     changeType: 'increase' 
   },
   { 
     name: 'Orders Won', 
-    value: '2', 
+    value: '0', 
     icon: Trophy, 
-    change: '25%', 
+    change: '-', 
     changeType: 'increase' 
   },
   { 
     name: 'Pending Review', 
-    value: '2', 
+    value: '0', 
     icon: Clock, 
-    change: '5%', 
+    change: '-', 
     changeType: 'decrease' 
   },
   { 
     name: 'Win Rate', 
-    value: '33%', 
+    value: '0%', 
     icon: TrendingUp, 
-    change: '8%', 
+    change: '-', 
     changeType: 'increase' 
   },
-]
+])
 
-const recentBids = [
-  { 
-    title: 'Industrial Steel Plates - Grade A',
-    amount: '₹33,50,000',
-    date: '25 Jan 2024',
-    rank: '#2',
-    status: 'Shortlisted',
-    statusColor: 'bg-blue-100 text-blue-800'
-  },
-  { 
-    title: 'Electrical Control Panels',
-    amount: '₹27,00,000',
-    date: '28 Jan 2024',
-    rank: '#3',
-    status: 'Under Review',
-    statusColor: 'bg-yellow-100 text-yellow-800'
-  },
-  { 
-    title: 'Safety Equipment Batch 2024',
-    amount: '₹4,50,000',
-    date: '12 Feb 2024',
-    rank: '#1',
-    status: 'L1 Bidder',
-    statusColor: 'bg-green-100 text-green-800'
-  }
-]
+onMounted(async () => {
+    // Check login
+    if (!authStore.isAuthenticated) {
+        window.location.href = '/login' // Force redirect if not logged in
+        return
+    }
+
+    await fetchDashboardStats()
+    if (dashboardData.value.stats) {
+        stats.value[0].value = dashboardData.value.stats.total_bids
+        stats.value[1].value = dashboardData.value.stats.orders_won
+        stats.value[2].value = dashboardData.value.stats.pending_review
+        stats.value[3].value = dashboardData.value.stats.win_rate
+    }
+})
+
 
 const activities = [
   {
@@ -84,90 +101,10 @@ const activities = [
     time: '2 hours ago',
     icon: FileText,
     iconColor: 'bg-blue-100 text-blue-600'
-  },
-  {
-    title: 'Won Industrial Motors tender',
-    time: '1 day ago',
-    icon: Trophy,
-    iconColor: 'bg-green-100 text-green-600'
-  },
-  {
-    title: 'Shortlisted for Packaging Materials',
-    time: '2 days ago',
-    icon: Trophy,
-    iconColor: 'bg-yellow-100 text-yellow-600'
-  },
-    {
-    title: 'Submitted bid for Safety Equipment',
-    time: '2 days ago',
-    icon: FileText,
-    iconColor: 'bg-blue-100 text-blue-600'
   }
 ]
 
-const bidHistory = [
-  { 
-    title: 'Industrial Steel Plates - Grade A',
-    id: 'TND-2024-001',
-    amount: '₹33,50,000',
-    date: '25 Jan 2024',
-    submitted: '25 Jan 2024',
-    rank: '#2',
-    status: 'Shortlisted',
-    statusColor: 'bg-blue-100 text-blue-800'
-  },
-  { 
-    title: 'Electrical Control Panels',
-    id: 'TND-2024-004',
-    amount: '₹27,00,000',
-    date: '28 Jan 2024',
-    submitted: '28 Jan 2024',
-    rank: '#3',
-    status: 'Under Review',
-    statusColor: 'bg-yellow-100 text-yellow-800'
-  },
-  { 
-    title: 'Safety Equipment Annual Supply',
-    id: 'TND-2024-005',
-    amount: '₹7,50,000',
-    date: '20 Jan 2024',
-    submitted: '20 Jan 2024',
-    rank: '#1',
-    status: 'Won',
-    statusColor: 'bg-green-100 text-green-800'
-  },
-  {
-    title: 'Welding Consumables Q4',
-    id: 'TND-2023-089',
-    amount: '₹4,50,000',
-    date: '10 Dec 2023',
-    submitted: '10 Dec 2023',
-    rank: '#4',
-    status: 'Not Selected',
-    statusColor: 'bg-red-100 text-red-800'
-  },
-  {
-    title: 'CNC Machining Center',
-    id: 'TND-2024-002',
-    amount: '₹82,00,000',
-    date: '29 Jan 2024',
-    submitted: '29 Jan 2024',
-    rank: '-',
-    status: 'Submitted',
-    statusColor: 'bg-gray-100 text-gray-800'
-  },
-  {
-    title: 'Office Furniture Supply',
-    id: 'TND-2023-078',
-    amount: '₹3,20,000',
-    date: '15 Nov 2023',
-    submitted: '15 Nov 2023',
-    rank: '#1',
-    status: 'Won',
-    statusColor: 'bg-green-100 text-green-800'
-  }
-]
-
+// Mock data for charts/complex analytics as they require more complex backend aggregation
 const performanceCategories = [
   { name: 'Raw Materials', won: 2, total: 5, percentage: 40, color: 'bg-purple-600' },
   { name: 'Machinery', won: 1, total: 3, percentage: 33, color: 'bg-indigo-600' },
@@ -186,7 +123,10 @@ const profileCompletion = 85
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 pb-20">
+  <div v-if="isLoading" class="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+  </div>
+  <div v-else class="min-h-screen bg-gray-50 pb-20">
     <!-- Header -->
     <div class="bg-white border-b border-gray-200">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
@@ -194,14 +134,14 @@ const profileCompletion = 85
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-3 mb-2">
                 <div class="h-12 w-12 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-xl font-bold">
-                    {{ state.user?.name?.charAt(0) || 'U' }}
+                    {{ dashboardData.user_name?.charAt(0) || 'U' }}
                 </div>
                 <div>
                      <h2 class="text-2xl font-bold leading-7 text-gray-900 sm:truncate sm:text-3xl sm:tracking-tight">
-                    Welcome back!
+                    Welcome back! {{ dashboardData.user_name }}
                     </h2>
                      <div class="flex items-center gap-2 text-sm text-gray-500">
-                        {{ state.user?.company || 'Company Name' }}
+                        {{ dashboardData.supplier_name || 'Fetching Company...' }}
                         <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
                             <CheckCircle class="mr-1 h-3 w-3" />
                             Verified
@@ -273,7 +213,7 @@ const profileCompletion = 85
                     </div>
                     <div>
                        <p class="text-sm font-medium text-gray-500">Total Bid Value</p>
-                       <p class="text-xl font-bold text-gray-900">₹1,57,70,000</p>
+                       <p class="text-xl font-bold text-gray-900">₹0</p>
                     </div>
                  </div>
               </div>
@@ -284,7 +224,7 @@ const profileCompletion = 85
                     </div>
                     <div>
                         <p class="text-sm font-medium text-gray-500">Orders Won Value</p>
-                        <p class="text-xl font-bold text-gray-900">₹10,70,000</p>
+                        <p class="text-xl font-bold text-gray-900">₹0</p>
                     </div>
                  </div>
               </div>
@@ -301,8 +241,11 @@ const profileCompletion = 85
                     View All <span aria-hidden="true" class="ml-1">→</span>
                  </a>
               </div>
-              <ul role="list" class="divide-y divide-gray-100">
-                 <li v-for="bid in recentBids" :key="bid.title" class="px-6 py-4 hover:bg-gray-50 transition-colors">
+              <div v-if="dashboardData.recent_bids.length === 0" class="p-6 text-center text-gray-500">
+                  No recent bids found.
+              </div>
+              <ul v-else role="list" class="divide-y divide-gray-100">
+                 <li v-for="bid in dashboardData.recent_bids" :key="bid.id" class="px-6 py-4 hover:bg-gray-50 transition-colors">
                     <div class="flex items-center justify-between gap-x-6">
                        <div class="min-w-0">
                           <div class="flex items-start gap-x-3">
@@ -315,7 +258,6 @@ const profileCompletion = 85
                           </div>
                        </div>
                        <div class="flex flex-none items-center gap-x-4">
-                          <span class="font-medium text-amber-500 text-sm">{{ bid.rank }}</span>
                           <span :class="[bid.statusColor, 'inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ring-gray-500/10']">
                              {{ bid.status }}
                           </span>
