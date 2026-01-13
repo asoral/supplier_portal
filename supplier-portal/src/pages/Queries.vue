@@ -1,177 +1,153 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { MessageSquare, Clock, CheckCircle, FileQuestion, Plus, Search, FileText, X, Send } from 'lucide-vue-next'
 
+// --- State Management ---
 const activeTab = ref('My Queries')
 const tabs = ['My Queries', 'Questionnaires']
 const searchQuery = ref('')
+const isLoading = ref(true)
+const queries = ref([]) // Stores live data from RFQ Query doctype
+const tendersList = ref([]) // Stores dynamic RFQ IDs
 
-const queries = ref([
-  {
-    id: 1,
-    type: 'Query',
-    title: 'Clarification on thickness tolerance',
-    ref: 'Industrial Steel Plates - Grade A • TND-2024-001',
-    status: 'Answered',
-    question: 'Can you please confirm the acceptable tolerance for the 12mm thickness plates? Is it ±0.5mm or ±1mm?',
-    response: 'The acceptable tolerance for 12mm plates is ±0.8mm as per IS 2062 standards.',
-    responseDate: '24 Jan, 02:00 pm',
-    submitted: '23 Jan, 10:30 am'
-  },
-  {
-    id: 2,
-    type: 'Query',
-    title: 'Site visit scheduling',
-    ref: 'Electrical Control Panels • TND-2024-004',
-    status: 'Pending',
-    question: 'We would like to schedule a site visit before submitting our bid. Please provide available dates.',
-    response: null,
-    submitted: '1 Feb, 09:15 am'
-  },
-  {
-    id: 3,
-    type: 'Query',
-    title: 'Alternative brand acceptance',
-    ref: 'CNC Machining Center • TND-2024-002',
-    status: 'Answered',
-    question: 'Will Mazak or DMG Mori be acceptable alternatives to the specified Fanuc control system?',
-    response: 'Yes, Mazak, DMG Mori, and Okuma are acceptable alternatives with equivalent specifications.',
-    responseDate: '29 Jan, 11:30 am',
-    submitted: '28 Jan, 04:45 pm'
-  },
-  {
-    id: 4,
-    type: 'Questionnaire',
-    title: 'Vendor Compliance Assessment',
-    ref: 'Standard Vendor Qualification',
-    status: 'Action Required',
-    question: 'Please complete the mandatory compliance assessment regarding environmental standards and labor practices.',
-    response: null,
-    submitted: '2 Feb, 10:00 am',
-    actionLabel: 'Start Questionnaire'
-  },
-  {
-    id: 5,
-    type: 'Questionnaire',
-    title: 'Financial Capability Survey',
-    ref: 'Annual Review 2024',
-    status: 'Completed',
-    question: 'Annual financial capability survey for registered vendors.',
-    response: 'Submitted on 15 Jan, 2024',
-    responseDate: '15 Jan, 03:30 pm',
-    submitted: '15 Jan, 09:00 am',
-    actionLabel: 'View Response'
+// Modal & Form State
+const isQueryModalOpen = ref(false)
+const newQuery = ref({ tender: '', subject: '', description: '' })
+
+// Questionnaire State
+const isRequestModalOpen = ref(false)
+const newRequest = ref({ tender: '', type: '', reason: '' })
+const questionnaireTypes = ['Compliance Assessment', 'Technical Assessment']
+
+// --- Logic: Data Fetching ---
+
+// 1. Fetch live queries from backend
+const fetchQueries = async () => {
+  isLoading.value = true
+  try {
+    const response = await fetch('/api/resource/RFQ Query?' + new URLSearchParams({
+      fields: JSON.stringify(["name", "subject", "rfq", "query", "response", "status", "creation"]),
+      order_by: "creation desc"
+    }), { credentials: 'include' })
+
+    const result = await response.json()
+    const data = result.data || []
+
+    // Map Frappe fields to UI using 'rfq' fieldname
+    queries.value = data.map(q => ({
+      id: q.name,
+      type: 'Query',
+      title: q.subject,
+      ref: q.rfq, // Mapping to your specific 'rfq' field
+      status: q.status,
+      question: q.query,
+      response: q.response,
+      responseDate: q.response ? 'Answered' : null,
+      submitted: new Date(q.creation).toLocaleDateString('en-IN', { 
+        day: '2-digit', month: 'short', year: 'numeric' 
+      })
+    }))
+  } catch (error) {
+    console.error("Failed to fetch queries:", error)
+  } finally {
+    isLoading.value = false
   }
-])
+}
 
+// 2. Fetch valid Tenders dynamically
+const fetchTenders = async () => {
+  try {
+    const response = await fetch('/api/resource/Request for Quotation?' + new URLSearchParams({
+      fields: JSON.stringify(["name"]),
+      limit_page_length: 50
+    }), { credentials: 'include' })
+    
+    const result = await response.json()
+    tendersList.value = (result.data || []).map(t => t.name)
+  } catch (error) {
+    console.error("Failed to fetch tenders:", error)
+  }
+}
+
+// --- Logic: Form Submissions ---
+
+// Submit new query to Frappe
+const submitQuery = async () => {
+  if (!newQuery.value.subject || !newQuery.value.description || !newQuery.value.tender) {
+    alert("Please fill in all fields.");
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/resource/RFQ Query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subject: newQuery.value.subject,
+        rfq: newQuery.value.tender, // Using 'rfq' as the fieldname
+        query: newQuery.value.description,
+        status: 'Pending'
+      }),
+      credentials: 'include'
+    });
+
+    if (response.ok) {
+      await fetchQueries(); // Refresh UI immediately
+      closeModal();
+    } else {
+      const error = await response.json();
+      console.error("Submission failed:", error);
+    }
+  } catch (err) {
+    console.error("Network error:", err);
+  }
+}
+
+// --- Logic: Computed Properties ---
+
+// Dynamic Stats calculation
 const stats = computed(() => {
-  const totalQueries = queries.value.filter(q => q.type === 'Query').length
-  const pending = queries.value.filter(q => q.type === 'Query' && q.status === 'Pending').length
-  const answered = queries.value.filter(q => q.type === 'Query' && q.status === 'Answered').length
-  const questionnaires = queries.value.filter(q => q.type === 'Questionnaire').length
+  const totalQueries = queries.value.length
+  const pending = queries.value.filter(q => q.status === 'Pending').length
+  const answered = queries.value.filter(q => q.status === 'Answered').length
 
   return [
     { name: 'Total Queries', value: totalQueries.toString(), icon: MessageSquare, color: 'text-blue-600', bg: 'bg-blue-50' },
     { name: 'Pending', value: pending.toString(), icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50' },
     { name: 'Answered', value: answered.toString(), icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
-    { name: 'Questionnaires', value: questionnaires.toString(), icon: FileQuestion, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { name: 'Questionnaires', value: '0', icon: FileQuestion, color: 'text-indigo-600', bg: 'bg-indigo-50' },
   ]
 })
 
 const filteredQueries = computed(() => {
   const queryType = activeTab.value === 'My Queries' ? 'Query' : 'Questionnaire'
-  
   return queries.value.filter(q => 
     q.type === queryType &&
-    (q.title.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-    q.ref.toLowerCase().includes(searchQuery.value.toLowerCase()))
+    (q.title?.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+    q.ref?.toLowerCase().includes(searchQuery.value.toLowerCase()))
   )
 })
-const isQueryModalOpen = ref(false)
-const newQuery = ref({
-  tender: '',
-  subject: '',
-  description: ''
-})
 
-const tendersList = [
-  'Industrial Steel Plates - Grade A • TND-2024-001',
-  'CNC Machining Center • TND-2024-002',
-  'Safety Equipment Annual Supply • TND-2024-003'
-]
-
-const openModal = () => {
-  isQueryModalOpen.value = true
-}
-
+// --- Modal Controls ---
+const openModal = () => isQueryModalOpen.value = true
 const closeModal = () => {
   isQueryModalOpen.value = false
   newQuery.value = { tender: '', subject: '', description: '' }
 }
 
-const submitQuery = () => {
-  if (!newQuery.value.subject || !newQuery.value.description) return
-  
-  queries.value.unshift({
-    id: Date.now(),
-    type: 'Query',
-    title: newQuery.value.subject,
-    ref: newQuery.value.tender || 'General Inquiry',
-    status: 'Pending',
-    question: newQuery.value.description,
-    response: null,
-    submitted: 'Just now'
-  })
-  
-  closeModal()
-}
+const openRequestModal = () => isRequestModalOpen.value = true
+const closeRequestModal = () => isRequestModalOpen.value = false
+const submitRequest = () => { /* Logic similar to submitQuery */ }
 
-// Request Questionnaire Logic
-const isRequestModalOpen = ref(false)
-const newRequest = ref({
-  tender: '',
-  type: '',
-  reason: ''
+// --- Lifecycle ---
+onMounted(() => {
+  fetchQueries();
+  fetchTenders(); // Load dynamic list for the dropdown
 })
-
-const questionnaireTypes = [
-  'Vendor Compliance Assessment',
-  'Financial Capability Survey',
-  'Technical Assessment',
-  'Safety Standards Review'
-]
-
-const openRequestModal = () => {
-  isRequestModalOpen.value = true
-}
-
-const closeRequestModal = () => {
-  isRequestModalOpen.value = false
-  newRequest.value = { tender: '', type: '', reason: '' }
-}
-
-const submitRequest = () => {
-  if (!newRequest.value.tender || !newRequest.value.type) return
-  
-  queries.value.unshift({
-    id: Date.now(),
-    type: 'Questionnaire',
-    title: newRequest.value.type,
-    ref: newRequest.value.tender,
-    status: 'Pending',
-    question: newRequest.value.reason || 'Requested questionnaire',
-    response: null,
-    submitted: 'Just now',
-    actionLabel: 'View Status'
-  })
-  
-  closeRequestModal()
-}
 </script>
 
 <template>
   <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-    <!-- Header -->
     <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
       <div>
         <h1 class="text-3xl font-bold tracking-tight text-gray-900">Queries & Questionnaires</h1>
@@ -187,7 +163,6 @@ const submitRequest = () => {
       </div>
     </div>
 
-    <!-- Stats -->
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-4 mb-8">
        <div v-for="stat in stats" :key="stat.name" class="rounded-lg bg-white px-4 py-5 shadow sm:p-6 border border-gray-100 flex items-center gap-4">
           <div :class="[stat.bg, 'rounded-md p-3']">
@@ -200,7 +175,6 @@ const submitRequest = () => {
        </div>
     </div>
 
-    <!-- Tabs -->
     <div class="mb-6">
        <div class="flex space-x-2">
           <button
@@ -219,9 +193,8 @@ const submitRequest = () => {
        </div>
     </div>
 
-    <!-- Search -->
-    <div class="mb-6">
-       <div class="relative max-w-sm">
+    <div class="mb-6 flex items-center justify-between">
+       <div class="relative max-w-sm flex-grow">
           <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
              <Search class="h-4 w-4 text-gray-400" />
           </div>
@@ -232,10 +205,18 @@ const submitRequest = () => {
             placeholder="Search queries..." 
           />
        </div>
+       <div v-if="isLoading" class="ml-4">
+          <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div>
+       </div>
     </div>
 
-    <!-- List -->
-    <div class="space-y-4">
+    <div v-if="!isLoading" class="space-y-4">
+       <div v-if="filteredQueries.length === 0" class="text-center py-12 bg-white rounded-lg border border-dashed border-gray-300">
+          <MessageSquare class="mx-auto h-12 w-12 text-gray-400" />
+          <h3 class="mt-2 text-sm font-semibold text-gray-900">No records found</h3>
+          <p class="mt-1 text-sm text-gray-500">Submit a new query to see it listed here.</p>
+       </div>
+
        <div v-for="query in filteredQueries" :key="query.id" class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
           <div class="flex items-start gap-4">
              <div class="mt-1">
@@ -258,15 +239,12 @@ const submitRequest = () => {
                          {{ query.status }}
                       </span>
                    </div>
-                   <div v-if="query.type === 'Questionnaire' && query.status === 'Action Required'">
-                       <button class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
-                          {{ query.actionLabel }}
-                       </button>
-                   </div>
+                   <div class="text-xs font-mono text-gray-400">{{ query.id }}</div>
                </div>
+               
                 <p class="text-sm text-gray-500 mb-4">{{ query.ref }}</p>
 
-                <div class="bg-gray-50 rounded-lg p-4 mb-3 text-sm text-gray-800 font-medium">
+                <div class="bg-gray-50 rounded-lg p-4 mb-3 text-sm text-gray-800 font-medium whitespace-pre-wrap">
                    {{ query.question }}
                 </div>
 
@@ -275,9 +253,7 @@ const submitRequest = () => {
                       <span>Response</span>
                       <span class="text-xs opacity-75">{{ query.responseDate }}</span>
                    </div>
-                   <div class="text-green-900">
-                      {{ query.response }}
-                   </div>
+                   <div class="text-green-900 prose prose-sm max-w-none" v-html="query.response"></div>
                 </div>
 
                 <p class="text-xs text-gray-400 mt-2">Submitted: {{ query.submitted }}</p>
@@ -286,7 +262,6 @@ const submitRequest = () => {
        </div>
     </div>
 
-    <!-- Submit Query Modal -->
     <div v-if="isQueryModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
       <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeModal"></div>
       
@@ -329,8 +304,6 @@ const submitRequest = () => {
       </div>
     </div>
 
-
-    <!-- Request Questionnaire Modal -->
     <div v-if="isRequestModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
       <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeRequestModal"></div>
       
