@@ -4,12 +4,18 @@ import { useRoute, useRouter } from 'vue-router'
 import { 
   ArrowLeft, BadgeCheck, Clock, Download, Share2, Printer, 
   AlertCircle, DollarSign, Calendar, MapPin, Building2, UserCircle, FileText,
-  TrendingDown, Banknote, Hourglass, Bookmark, ArrowRight, Zap 
+  TrendingDown, Banknote, Hourglass, Bookmark, ArrowRight, Zap ,MessageSquare
 } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
 const isLoading = ref(true)
+const goToQueries = () => {
+  // This navigates to the Queries page based on your project structure
+  // Usually, this is /queries or /supplier-portal/queries
+  router.push('/queries') 
+}
+
 
 // Initialize tender as null so we can check if data has arrived
 const tender = ref(null)
@@ -387,7 +393,8 @@ onMounted(() => {
           <!-- Right Column (Stats & Actions) -->
           <div class="lg:col-span-1 space-y-6">
              
-             <!-- Summary Card -->
+             
+          <!-- Summary Card -->
              <div class="bg-white rounded-xl border border-gray-200 px-6 py-6 shadow-sm relative overflow-hidden">
                 <h3 class="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">Tender Summary</h3>
                 
@@ -419,13 +426,26 @@ onMounted(() => {
                 </div>
  
                 <button class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-lg shadow-sm transition-colors mb-3 flex items-center justify-center gap-2">
-                   <BadgeCheck class="w-4 h-4" /> Submit Your Bid
-                </button>
-                <a v-if="mainBoqUrl" :href="mainBoqUrl" target="_blank" class="w-full bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 text-sm font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer block text-center">
-                   <Download class="w-4 h-4 text-gray-500" /> Download BOQ
-                </a>
-             </div>
- 
+                  <BadgeCheck class="w-4 h-4" /> Submit Your Bid
+               </button>
+
+               <div class="flex items-center gap-2">
+                  <a :href="mainBoqUrl || '#'" target="_blank" 
+                     class="flex-grow bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 text-sm font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer no-underline">
+                     <Download class="w-4 h-4 text-gray-500" /> Download BOQ
+                  </a>
+
+                  <button 
+                  @click="goToQueries"
+                  class="p-2.5 bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
+                  title="View Queries"
+               >
+                  <MessageSquare class="w-5 h-5" />
+               </button>
+               </div>
+            </div>
+            
+            
              <!-- Live Bidding Card -->
              <div v-if="tender.liveBidding" class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm ring-1 ring-gray-200">
                  <div class="flex items-center justify-between mb-6">
