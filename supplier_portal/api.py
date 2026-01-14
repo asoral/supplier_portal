@@ -454,3 +454,66 @@ def delete_saved_tender(saved_id):
     except Exception as e:
          frappe.log_error(f"Delete Saved Tender Error: {str(e)}")
          return {"status": "error", "message": str(e)}
+
+@frappe.whitelist()
+def get_saved_tenders():
+    user = frappe.session.user
+    if user == "Guest":
+        return []
+
+    # 1. Improved Supplier Lookup (The "Handshake")
+    # First check the Portal User table
+    supplier = frappe.db.get_value("Portal User", {"user": user}, "parent")
+    print("------------------supplier",supplier)
+    
+    # Second check: if not found, check the Supplier table directly
+    if not supplier:
+        supplier = frappe.db.get_value("Supplier", {"email_id": user}, "name")
+
+    # print for debugging in terminal
+    print(f"DEBUG: Logged in User: {user} | Identified Supplier: {supplier}")
+
+    if not supplier:
+        # If this prints 'None', the data on the Supplier card is missing the email link
+        return []
+
+    # 2. Fetch from 'Saved RFQ' using the confirmed Supplier name
+    saved_docs = frappe.get_all("Saved RFQ", 
+        filters={"supplier": supplier},
+        fields=["name", "rfq", "creation"]
+    )
+    print("-------------------saved_docs",saved_docs)
+    
+    print(f"DEBUG: Found {len(saved_docs)} records for {supplier}")
+    
+    results = []
+    for item in saved_docs:
+        # 3. Pull RFQ details to show on the card
+        rfq_data = frappe.db.get_value("Request for Quotation", item.rfq, 
+            ["name", "custom_bid_status","custom_total_budget_","custom_rfq_category", "custom_bid_submission_last_date"], as_dict=1)
+        
+        if rfq_data:
+            results.append({
+                "saved_id": item.name,      # Backend ID for deletion
+                "id": rfq_data.name,        # PUR-RFQ-2026-00001
+                "status": rfq_data.custom_bid_status ,
+                "saved_on": item.creation,
+                "amount": rfq_data.custom_total_budget_ ,     
+                "category": rfq_data.custom_rfq_category ,
+                "deadline": rfq_data.custom_bid_submission_last_date,
+                
+            })
+            
+    return results
+
+@frappe.whitelist()
+def delete_saved_tender(saved_id):
+    """
+    Safely removes a tender from the saved list.
+    """
+    try:
+        frappe.delete_doc("Saved RFQ", saved_id)
+        return {"status": "success", "message": _("Removed from Saved")}
+    except Exception as e:
+        frappe.log_error(f"Delete Saved Tender Error: {str(e)}")
+        return {"status": "error", "message": str(e)}

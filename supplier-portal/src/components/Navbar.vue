@@ -61,7 +61,8 @@ const iconMap = {
   FileCode,
   MessageSquare,
   Webhook,
-  HelpCircle
+  HelpCircle,
+  Bookmark
 }
 
 const activeNavigation = computed(() => {

@@ -6,37 +6,113 @@ import {
   AlertCircle, DollarSign, Calendar, MapPin, Building2, UserCircle, FileText,
   TrendingDown, Banknote, Hourglass, Bookmark, ArrowRight, Zap ,MessageSquare
 } from 'lucide-vue-next'
+import { createToast } from 'mosha-vue-toastify'
 
 const route = useRoute()
 const router = useRouter()
 const isLoading = ref(true)
+const isSaved = ref(false)
+const savedTendersList = ref([])
+
+// --- ADDED: Logic to check database on page load ---
+const checkSavedStatus = async () => {
+  try {
+    const response = await fetch('/api/method/supplier_portal.api.get_saved_tenders')
+    const result = await response.json()
+    const savedData = result.message || []
+    
+    // Find if this tender is in the list
+    const existing = savedData.find(t => t.id === route.params.id)
+    if (existing) {
+      isSaved.value = true
+      // Store the doc name (saved_id) so we can delete it later
+      if (tender.value) tender.value.saved_record_name = existing.saved_id
+    }
+  } catch (error) {
+    console.error("Error checking saved status:", error)
+  }
+}
+
+// --- UPDATED: Save logic now handles Delete if already saved ---
+const handleSave = async () => {
+  if (!tender.value) return
+
+  // If already blue, we Unsave (Delete)
+  if (isSaved.value) {
+    try {
+      const response = await fetch('/api/method/frappe.client.delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Frappe-CSRF-Token': window.csrf_token || ''
+        },
+        body: JSON.stringify({
+          doctype: 'Saved RFQ',
+          name: tender.value.saved_record_name
+        })
+      })
+      if (response.ok) {
+        isSaved.value = false
+        createToast('Removed from saved list', { type: 'info' })
+      }
+    } catch (error) {
+      console.error('Delete error:', error)
+    }
+    return
+  }
+
+  // If not blue, we Save (Insert)
+  try {
+    const response = await fetch('/api/method/frappe.client.insert', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Frappe-CSRF-Token': window.csrf_token || ''
+      },
+      body: JSON.stringify({
+        doc: {
+          doctype: 'Saved RFQ',
+          rfq: tender.value.id,
+          supplier: 'Dhanvant Marathe' 
+        }
+      })
+    })
+
+    if (response.ok || response.status === 409) {
+      isSaved.value = true
+      await checkSavedStatus() // Refresh to get the new saved_record_name
+      
+      if (response.status === 409) {
+        createToast('Tender is already in your saved list', { type: 'info' })
+      } else {
+        createToast('Tender saved successfully', { type: 'success' })
+      }
+    }
+  } catch (error) {
+    console.error('Save error:', error)
+  }
+}
+
 const goToQueries = () => {
-  // This navigates to the Queries page based on your project structure
-  // Usually, this is /queries or /supplier-portal/queries
   router.push('/queries') 
 }
 
-
-// Initialize tender as null so we can check if data has arrived
 const tender = ref(null)
 
-// API Fetching Logic
 const fetchTenderDetails = async () => {
   isLoading.value = true
   try {
     const response = await fetch('/api/method/supplier_portal.api.get_tender_details?' + new URLSearchParams({
         name: route.params.id
-    }), { credentials: 'include' }) // include credentials for auth check
+    }), { credentials: 'include' })
     
     const result = await response.json()
-    // Frappe custom API returns data in result.message
     const data = result.message
 
     if (!data) {
         throw new Error("No data returned")
     }
 
-    // Map the API structure to UI variables
     tender.value = {
       id: data.name,
       title: data.title,
@@ -44,39 +120,33 @@ const fetchTenderDetails = async () => {
       location: data.billing_address ,
       category: data.category,
       status: data.status,
-      // Status 'Active' plus explicit enable check
       liveBidding: data.status === 'Active' && data.enable_live_bidding,
       description: data.description ,
       quantity: data.total_quantity ,
-      bidsReceived: data.bidsReceived || 0, // Fallback if field missing
+      bidsReceived: data.bidsReceived || 0,
       estBudget: data.total_budget ,
       deadline: data.submission_date ,
       department: data.department ,
-      currentLowestBid: data.total_budget , // Placeholder until we have sorting logic for bids
+      currentLowestBid: data.total_budget ,
       minBidDecrement: data.min_bid_decrement ,
       emdRequired: data.emd_amount ,
       termsData: data.terms || 'No terms and conditions provided.',
       autoExtension: data.auto_extension_limit ? data.auto_extension_limit + ' mins' : '0 mins',
       deliveryDate: data.schedule_date,
-      
-      // Dynamic Data from Child Tables
       items: data.items || [],
       documents: (data.documents || []).map(d => ({
           name: d.file_name,
           url: d.file_url,
-          size: d.file_size + ' bytes' // Simple formatting
+          size: d.file_size + ' bytes'
       })),
-
-      // Dynamic Timeline
       timeline: [
         { stage: 'Published', date: data.publish_date, completed: !!data.publish_date },
         { stage: 'Bid Submission Starts', date: data.submission_start_date, completed: new Date() > new Date(data.submission_start_date) },
         { stage: 'Submission Ends', date: data.submission_date, completed: new Date() > new Date(data.submission_date) },
         { stage: 'Result Declaration', date: data.result_date, completed: false },
         { stage: 'Delivery Expected', date: data.schedule_date, completed: false }
-      ].filter(t => t.date), // Filter out steps with no date
-      
-      similarTenders: [] // Logic for similars would need another API call
+      ].filter(t => t.date),
+      similarTenders: []
     }
   } catch (error) {
     console.error("Failed to fetch tender details:", error)
@@ -87,7 +157,6 @@ const fetchTenderDetails = async () => {
 
 const activeTab = ref('Overview')
 const tabs = ['Overview', 'Specifications', 'Documents', 'Timeline']
-
 const bidAmount = ref()
 
 const placeBid = () => {
@@ -100,7 +169,6 @@ const quickBid = (amount) => {
    }
 }
 
-// Computed properties with safety checks
 const formattedBudget = computed(() => {
    if (!tender.value) return '₹0'
    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(tender.value.estBudget)
@@ -117,8 +185,10 @@ const mainBoqUrl = computed(() => {
    return itemWithBoq ? itemWithBoq.attach_boq : null
 })
 
-onMounted(() => {
-  fetchTenderDetails()
+// --- UPDATED: Call both functions on mount ---
+onMounted(async () => {
+  await fetchTenderDetails()
+  await checkSavedStatus()
 })
 </script>
 
@@ -143,61 +213,75 @@ onMounted(() => {
     <div v-else>
      <!-- Header/Breadcrumb -->
      <div class="bg-white border-b border-gray-200">
-       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-         <button @click="router.back()" class="flex items-center text-sm text-gray-500 hover:text-gray-900 mb-4 transition-colors">
-           <ArrowLeft class="w-4 h-4 mr-1" /> Back to Tenders
-         </button>
-         
-         <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
-           <div>
-             <div class="flex flex-wrap gap-2 mb-3">
-                <span class="inline-flex items-center rounded-md bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
-                   {{ tender.category }}
-                </span>
-                <span class="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 border border-indigo-100">
-                   {{ tender.status }}
-                </span>
-                <span v-if="tender.liveBidding" class="inline-flex items-center rounded-md bg-orange-50 px-2.5 py-0.5 text-xs font-medium text-orange-700 border border-orange-100">
-                   <span class="relative flex h-2 w-2 mr-1.5">
-                     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                     <span class="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
-                   </span>
-                   Live Bidding
-                </span>
-             </div>
-             <h1 class="text-2xl font-bold text-gray-900 mb-2">{{ tender.title }}</h1>
-             <div class="flex flex-wrap items-center gap-4 text-xs text-gray-500">
-                <span class="flex items-center gap-1"><BadgeCheck class="w-3.5 h-3.5" /> {{ tender.id }}</span>
-                <span class="flex items-center gap-1"><Calendar class="w-3.5 h-3.5" /> Published: {{ tender.publishedDate }}</span>
-                <span class="flex items-center gap-1"><MapPin class="w-3.5 h-3.5" /> {{ tender.location }}</span>
-                <span class="flex items-center gap-1"><UserCircle class="w-3.5 h-3.5" /> {{ tender.views || 0 }} views</span>
-             </div>
-           </div>
-           
-           <div class="flex gap-2">
-              <button class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 border border-transparent hover:border-gray-200">
-                 <Share2 class="w-4 h-4" />
-              </button>
-              <button class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 border border-transparent hover:border-gray-200">
-                 <Printer class="w-4 h-4" />
-              </button>
-           </div>
-         </div>
-         
-         <!-- Tabs -->
-         <div class="flex gap-6 mt-8 border-b border-gray-100">
-            <button 
-               v-for="tab in tabs" 
-               :key="tab"
-               @click="activeTab = tab"
-               class="pb-3 text-sm font-medium border-b-2 transition-colors"
-               :class="activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
-             >
-               {{ tab }}
-            </button>
-         </div>
-       </div>
-     </div>
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+    <button @click="router.back()" class="flex items-center text-sm text-gray-500 hover:text-gray-900 mb-4 transition-colors">
+      <ArrowLeft class="w-4 h-4 mr-1" /> Back to Tenders
+    </button>
+    
+    <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
+      <div>
+        <div class="flex flex-wrap gap-2 mb-3">
+          <span class="inline-flex items-center rounded-md bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
+            {{ tender.category }}
+          </span>
+          <span class="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 border border-indigo-100">
+            {{ tender.status }}
+          </span>
+          <span v-if="tender.liveBidding" class="inline-flex items-center rounded-md bg-orange-50 px-2.5 py-0.5 text-xs font-medium text-orange-700 border border-orange-100">
+            <span class="relative flex h-2 w-2 mr-1.5">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+            </span>
+            Live Bidding
+          </span>
+        </div>
+        <h1 class="text-2xl font-bold text-gray-900 mb-2">{{ tender.title }}</h1>
+        <div class="flex flex-wrap items-center gap-4 text-xs text-gray-500">
+          <span class="flex items-center gap-1"><BadgeCheck class="w-3.5 h-3.5" /> {{ tender.id }}</span>
+          <span class="flex items-center gap-1"><Calendar class="w-3.5 h-3.5" /> Published: {{ tender.publishedDate }}</span>
+          <span class="flex items-center gap-1"><MapPin class="w-3.5 h-3.5" /> {{ tender.location }}</span>
+          <span class="flex items-center gap-1"><UserCircle class="w-3.5 h-3.5" /> {{ tender.views || 0 }} views</span>
+        </div>
+      </div>
+      
+      <div class="flex gap-2">
+        <button 
+          @click="handleSave"
+          class="flex items-center gap-1.5 px-3 py-2 rounded-md border transition-all duration-200"
+          :class="isSaved 
+            ? 'text-indigo-600 bg-indigo-50 border-indigo-200 shadow-sm' 
+            : 'text-slate-500 bg-white border-gray-200 hover:text-indigo-600 hover:border-indigo-100 hover:bg-gray-50'"
+        >
+          <Bookmark 
+            class="w-5 h-5 transition-transform duration-200 active:scale-90" 
+            :fill="isSaved ? 'currentColor' : 'none'" 
+          />
+          <span class="text-sm font-semibold">{{ isSaved ? 'Saved' : 'Save' }}</span>
+        </button>
+
+        <button class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 border border-gray-200 transition-colors">
+          <Share2 class="w-4 h-4" />
+        </button>
+
+        <button class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 border border-gray-200 transition-colors">
+          <Printer class="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+    
+    <div class="flex gap-6 mt-8 border-b border-gray-100">
+      <button 
+        v-for="tab in tabs" 
+        :key="tab"
+        @click="activeTab = tab"
+        class="pb-3 text-sm font-medium border-b-2 transition-colors"
+        :class="activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+      >
+        {{ tab }}
+      </button>
+    </div>
+  </div>
+</div>
  
      <!-- Main Body -->
      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

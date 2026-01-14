@@ -37,10 +37,10 @@ const routes = [
     component: () => import('../pages/Dashboard.vue')
   },
   {
-    path: '/saved-tenders',
-    name: 'SavedTenders',
-    component: () => import('../pages/SavedTenders.vue')
-  },
+  path: '/saved-tenders', 
+  name: 'SavedTenders',
+  component: () => import('../pages/SavedTenders.vue')
+},
   {
     path: '/invoices',
     name: 'Invoices',
