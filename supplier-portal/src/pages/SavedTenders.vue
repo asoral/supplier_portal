@@ -37,6 +37,62 @@ const updateStats = () => {
   stats.value[3].value = "0" 
 }
 
+const getLatestCsrfToken = async () => {
+    try {
+        const response = await fetch('/api/method/supplier_portal.api.get_csrf_token', { 
+            credentials: 'include',
+            cache: 'no-store'
+        });
+        const data = await response.json();
+        
+        if (data.message) {
+            window.csrf_token = data.message;
+            return data.message;
+        }
+    } catch (e) {
+        console.error("Failed to refresh CSRF token", e);
+    }
+    return window.csrf_token;
+}
+
+const secureFetch = async (url, options = {}) => {
+    let token = window.csrf_token;
+    if (!token || token === "None") {
+        token = await getLatestCsrfToken();
+    }
+    
+    // Merge headers carefully
+    const headers = {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-Frappe-CSRF-Token': token,
+        ...(options.headers || {})
+    };
+
+    // Ensure credentials are included
+    const fetchOptions = {
+        ...options,
+        headers,
+        credentials: 'include'
+    };
+
+    let response = await fetch(url, fetchOptions);
+    
+    if (!response.ok) {
+         try {
+             const clone = response.clone();
+             const err = await clone.json();
+             if (err.exc_type === 'CSRFTokenError' || response.status === 403 || response.status === 417 || response.status === 400) {
+                 await new Promise(r => setTimeout(r, 500));
+                 token = await getLatestCsrfToken();
+                 headers['X-Frappe-CSRF-Token'] = token;
+                 response = await fetch(url, { ...fetchOptions, headers });
+             }
+         } catch(e) { }
+    }
+    return response;
+}
+
 const fetchSavedTenders = async () => {
     isLoading.value = true;
     try {
@@ -53,15 +109,16 @@ const fetchSavedTenders = async () => {
         const rawData = result.message || [];
         
         tenders.value = rawData.map(item => ({
-            // We use item.name if saved_id isn't provided by your custom API
-            saved_id: item.saved_id || item.name, 
-            id: item.id || item.rfq || 'N/A',
+            saved_id: item.saved_id, 
+            id: item.rfq_id || item.rfq || item.id, // Ensure we get the RFQ ID
             title: item.title || 'Untitled Tender',
             status: item.status || 'Active',
             category: item.category || 'General',
-            value: item.amount || item.total_budget || 0,
+            value: item.value || item.total_budget || 0, // api.py returns 'value'
             deadline: item.deadline || 'N/A',
-            savedOn: item.saved_on ? new Date(item.saved_on).toLocaleDateString('en-GB') : 'Recently'
+            deadlineStatus: item.deadlineStatus,
+            savedOn: item.savedOn || 'Recently',
+            liveBidding: item.liveBidding
         }));
 
         updateStats(); 
@@ -77,15 +134,10 @@ const deleteTender = async (savedId) => {
     if (!confirm('Remove this tender from your saved list?')) return
 
     try {
-        const response = await fetch('/api/method/frappe.client.delete', {
+        const response = await secureFetch('/api/method/supplier_portal.api.delete_saved_tender', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Frappe-CSRF-Token': window.csrf_token || ''
-            },
             body: JSON.stringify({ 
-                doctype: 'Saved RFQ',
-                name: savedId 
+                saved_id: savedId 
             })
         })
         
@@ -194,7 +246,7 @@ onMounted(() => {
           <div class="flex flex-col sm:flex-row justify-between gap-4">
              <div class="flex-grow">
                 <div class="flex items-center gap-2 mb-1">
-                   <h3 class="text-base font-semibold text-gray-900 hover:text-indigo-600 cursor-pointer" @click="router.push('/tenders/' + tender.id)">
+                   <h3 class="text-base font-semibold text-gray-900 hover:text-indigo-600 cursor-pointer" @click="router.push({ name: 'TenderDetail', params: { id: tender.id } })">
                       {{ tender.title }}
                    </h3>
                    <span 
@@ -231,12 +283,18 @@ onMounted(() => {
                     <Trash2 class="h-4 w-4" />
                  </button>
 
-                 <button @click="router.push('/tenders/' + tender.id)" class="inline-flex items-center gap-1 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
-                    <Eye class="h-4 w-4" /> View Details
+                 <!-- If Live Bidding is enabled, show 'View & Bid' prominently -->
+                 <button v-if="tender.liveBidding" @click="router.push({ name: 'TenderDetail', params: { id: tender.id } })" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors flex items-center gap-1">
+                    <span class="relative flex h-2 w-2 mr-1">
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                      <span class="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                    </span>
+                    View & Bid
                  </button>
 
-                 <button v-if="tender.status !== 'Closed'" @click="router.push('/tenders/' + tender.id)" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
-                    Place Bid
+                 <!-- Otherwise just show 'View Details' -->
+                 <button v-else @click="router.push({ name: 'TenderDetail', params: { id: tender.id } })" class="inline-flex items-center gap-1 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
+                    <Eye class="h-4 w-4" /> View Details
                  </button>
              </div>
           </div>

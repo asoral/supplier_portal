@@ -73,10 +73,9 @@ const toggleMenu = () => {
   isOpen.value = !isOpen.value
 }
 
-const handleLogout = () => {
-  logout()
+const handleLogout = async () => {
+  await logout()
   isProfileOpen.value = false
-  window.location.href = '/login'
 }
 </script>
 

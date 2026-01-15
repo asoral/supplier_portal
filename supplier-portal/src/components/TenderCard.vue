@@ -84,7 +84,7 @@ const statusClasses = computed(() => {
       </div>
 
       <h3 class="text-base font-semibold leading-6 text-gray-900 group-hover:text-indigo-600 transition-colors">
-        <router-link :to="`/tenders/${tender.id}`">
+        <router-link :to="{ name: 'TenderDetail', params: { id: tender.id } }">
           {{ tender.title }}
         </router-link>
       </h3>
@@ -110,7 +110,7 @@ const statusClasses = computed(() => {
         </div>
       </div>
        
-       <div v-if="tender.status === 'Active'" class="mt-4 pt-3 flex items-center justify-between border-t border-dashed border-gray-200">
+       <div v-if="tender.liveBidding" class="mt-4 pt-3 flex items-center justify-between border-t border-dashed border-gray-200">
           <div class="text-xs text-orange-600 font-medium flex items-center gap-1">
              <span class="relative flex h-2 w-2">
                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
@@ -123,19 +123,19 @@ const statusClasses = computed(() => {
 
      <div class="mt-4 flex gap-2 z-20 relative">
         <router-link 
-          v-if="tender.status !== 'Active'"
-          :to="`/tenders/${tender.id}`" 
-          class="flex-1 flex items-center justify-center rounded-md bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-600 shadow-sm hover:bg-indigo-100 transition-colors text-center"
-        >
-          View Details
-        </router-link>
-
-        <router-link 
-          v-if="tender.status === 'Active'"
-          :to="`/tenders/${tender.id}`" 
+          v-if="tender.liveBidding"
+          :to="{ name: 'TenderDetail', params: { id: tender.id } }" 
           class="flex-1 flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors text-center"
         >
           View & Bid
+        </router-link>
+
+        <router-link 
+          v-else
+          :to="{ name: 'TenderDetail', params: { id: tender.id } }" 
+          class="flex-1 flex items-center justify-center rounded-md bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-600 shadow-sm hover:bg-indigo-100 transition-colors text-center"
+        >
+          View Details
         </router-link>
       </div>
     </div>

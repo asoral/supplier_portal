@@ -34,26 +34,86 @@ const checkSavedStatus = async () => {
 }
 
 // --- UPDATED: Save logic now handles Delete if already saved ---
+// --- UPDATED: Secure Fetch with Auto-Retry ---
+const getLatestCsrfToken = async () => {
+    try {
+        const response = await fetch('/api/method/supplier_portal.api.get_csrf_token', { 
+            credentials: 'include',
+            cache: 'no-store'
+        });
+        const data = await response.json();
+        
+        if (data.message) {
+            window.csrf_token = data.message;
+            return data.message;
+        }
+    } catch (e) {
+        console.error("Failed to refresh CSRF token", e);
+    }
+    return window.csrf_token;
+}
+
+const secureFetch = async (url, options = {}) => {
+    let token = window.csrf_token;
+    if (!token || token === "None") {
+        token = await getLatestCsrfToken();
+    }
+    
+    // Merge headers carefully
+    const headers = {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-Frappe-CSRF-Token': token,
+        ...(options.headers || {})
+    };
+
+    // Ensure credentials are included
+    const fetchOptions = {
+        ...options,
+        headers,
+        credentials: 'include'
+    };
+
+    let response = await fetch(url, fetchOptions);
+    
+    // Check if we need to retry due to CSRF
+    if (!response.ok) {
+         try {
+             const clone = response.clone();
+             const err = await clone.json();
+             
+             if (err.exc_type === 'CSRFTokenError' || response.status === 403 || response.status === 417 || response.status === 400) {
+                 console.warn("CSRF Error, retrying...", err.exc_type);
+                 await new Promise(r => setTimeout(r, 500));
+                 token = await getLatestCsrfToken();
+                 headers['X-Frappe-CSRF-Token'] = token;
+                 response = await fetch(url, { ...fetchOptions, headers });
+             }
+         } catch(e) { }
+    }
+    return response;
+}
+
 const handleSave = async () => {
   if (!tender.value) return
 
   // If already blue, we Unsave (Delete)
   if (isSaved.value) {
     try {
-      const response = await fetch('/api/method/frappe.client.delete', {
+      const response = await secureFetch('/api/method/supplier_portal.api.delete_saved_tender', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Frappe-CSRF-Token': window.csrf_token || ''
-        },
         body: JSON.stringify({
-          doctype: 'Saved RFQ',
-          name: tender.value.saved_record_name
+          saved_id: tender.value.saved_record_name
         })
       })
-      if (response.ok) {
+      const result = await response.json()
+      
+      if (response.ok && result.message?.status === 'success') {
         isSaved.value = false
         createToast('Removed from saved list', { type: 'info' })
+      } else {
+        console.error('Delete failed:', result)
+        createToast('Failed to remove tender', { type: 'danger' })
       }
     } catch (error) {
       console.error('Delete error:', error)
@@ -63,30 +123,26 @@ const handleSave = async () => {
 
   // If not blue, we Save (Insert)
   try {
-    const response = await fetch('/api/method/frappe.client.insert', {
+    const response = await secureFetch('/api/method/supplier_portal.api.save_tender', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Frappe-CSRF-Token': window.csrf_token || ''
-      },
       body: JSON.stringify({
-        doc: {
-          doctype: 'Saved RFQ',
-          rfq: tender.value.id,
-          supplier: 'Dhanvant Marathe' 
-        }
+        rfq_id: tender.value.id
       })
     })
 
-    if (response.ok || response.status === 409) {
+    const result = await response.json()
+
+    if (response.ok) {
       isSaved.value = true
-      await checkSavedStatus() // Refresh to get the new saved_record_name
-      
-      if (response.status === 409) {
-        createToast('Tender is already in your saved list', { type: 'info' })
+      if (result.message && result.message.name) {
+          tender.value.saved_record_name = result.message.name
       } else {
-        createToast('Tender saved successfully', { type: 'success' })
+          await checkSavedStatus() 
       }
+      createToast('Tender saved successfully', { type: 'success' })
+    } else {
+        console.error('Save failed:', result)
+        createToast(result.message || 'Failed to save tender', { type: 'danger' })
     }
   } catch (error) {
     console.error('Save error:', error)

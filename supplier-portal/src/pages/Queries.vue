@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { MessageSquare, Clock, CheckCircle, FileQuestion, Plus, Search, FileText, X, Send } from 'lucide-vue-next'
+import { createToast } from 'mosha-vue-toastify'
+import 'mosha-vue-toastify/dist/style.css'
 
 // --- State Management ---
 const activeTab = ref('My Queries')
@@ -21,24 +23,26 @@ const questionnaireTypes = ['Compliance Assessment', 'Technical Assessment']
 
 // --- Logic: Data Fetching ---
 
-// 1. Fetch live queries from backend
+// 1. Fetch live queries and questionnaires from backend
 const fetchQueries = async () => {
   isLoading.value = true
   try {
-    const response = await fetch('/api/resource/RFQ Query?' + new URLSearchParams({
-      fields: JSON.stringify(["name", "subject", "rfq", "query", "response", "status", "creation"]),
-      order_by: "creation desc"
-    }), { credentials: 'include' })
+    const headers = { 'X-Requested-With': 'XMLHttpRequest' };
+    
+    // Fetch both in parallel
+    const [queriesRes, questRes] = await Promise.all([
+        fetch('/api/method/supplier_portal.api.get_my_queries', { credentials: 'include', headers }),
+        fetch('/api/method/supplier_portal.api.get_my_questionnaires', { credentials: 'include', headers })
+    ]);
 
-    const result = await response.json()
-    const data = result.data || []
+    const queriesData = await queriesRes.json();
+    const questData = await questRes.json();
 
-    // Map Frappe fields to UI using 'rfq' fieldname
-    queries.value = data.map(q => ({
+    const qList = (queriesData.message || []).map(q => ({
       id: q.name,
       type: 'Query',
       title: q.subject,
-      ref: q.rfq, // Mapping to your specific 'rfq' field
+      ref: q.rfq, 
       status: q.status,
       question: q.query,
       response: q.response,
@@ -46,9 +50,27 @@ const fetchQueries = async () => {
       submitted: new Date(q.creation).toLocaleDateString('en-IN', { 
         day: '2-digit', month: 'short', year: 'numeric' 
       })
-    }))
+    }));
+
+    const qstList = (questData.message || []).map(q => ({
+      id: q.name,
+      type: 'Questionnaire',
+      title: q.subject, // 'Compliance Assessment' etc.
+      ref: q.rfq,
+      status: q.status,
+      question: q.query, // The 'reason'
+      response: q.response,
+      responseDate: q.response ? 'Answered' : null,
+      submitted: new Date(q.creation).toLocaleDateString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric'
+      })
+    }));
+
+    queries.value = [...qList, ...qstList];
+
   } catch (error) {
-    console.error("Failed to fetch queries:", error)
+    console.error("Failed to fetch data:", error)
+    createToast('Failed to load data', { type: 'danger' })
   } finally {
     isLoading.value = false
   }
@@ -72,50 +94,168 @@ const fetchTenders = async () => {
 // --- Logic: Form Submissions ---
 
 // Submit new query to Frappe
+const isSubmitting = ref(false)
+
+const getLatestCsrfToken = async () => {
+    try {
+        const response = await fetch('/api/method/supplier_portal.api.get_csrf_token', { 
+            credentials: 'include',
+            cache: 'no-store'
+        });
+        const data = await response.json();
+        
+        if (data.message) {
+            window.csrf_token = data.message;
+            return data.message;
+        }
+    } catch (e) {
+        console.error("Failed to refresh CSRF token", e);
+    }
+    return window.csrf_token;
+}
+
+const secureFetch = async (url, options = {}) => {
+    let token = window.csrf_token;
+    if (!token || token === "None") {
+        token = await getLatestCsrfToken();
+    }
+    
+    // Merge headers carefully
+    const headers = {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-Frappe-CSRF-Token': token,
+        ...(options.headers || {})
+    };
+
+    // Ensure credentials are included
+    const fetchOptions = {
+        ...options,
+        headers,
+        credentials: 'include'
+    };
+
+    let response = await fetch(url, fetchOptions);
+    
+    if (!response.ok) {
+         try {
+             // We clone to check error type
+             const clone = response.clone();
+             const err = await clone.json();
+             
+             if (err.exc_type === 'CSRFTokenError' || response.status === 403 || response.status === 417 || response.status === 400) {
+                 console.warn("CSRF Error, retrying...", err.exc_type);
+                 
+                 // Wait a moment and force get new token
+                 await new Promise(r => setTimeout(r, 500));
+                 token = await getLatestCsrfToken();
+                 
+                 // Update header with new token
+                 headers['X-Frappe-CSRF-Token'] = token;
+                 
+                 // Retry with new headers
+                 response = await fetch(url, {
+                     ...fetchOptions,
+                     headers
+                 });
+             }
+         } catch(e) { }
+    }
+    return response;
+}
+
 const submitQuery = async () => {
   if (!newQuery.value.subject || !newQuery.value.description || !newQuery.value.tender) {
-    alert("Please fill in all fields.");
+    createToast("Please fill in all fields.", { type: 'warning' });
     return;
   }
 
+  isSubmitting.value = true
   try {
-    const response = await fetch('/api/resource/RFQ Query', {
+    const response = await secureFetch('/api/method/supplier_portal.api.create_rfq_query', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         subject: newQuery.value.subject,
-        rfq: newQuery.value.tender, // Using 'rfq' as the fieldname
-        query: newQuery.value.description,
-        status: 'Pending'
+        rfq: newQuery.value.tender, 
+        query: newQuery.value.description
       }),
       credentials: 'include'
     });
 
     if (response.ok) {
-      await fetchQueries(); // Refresh UI immediately
-      closeModal();
+        const resData = await response.json();
+        createToast('Query submitted successfully', { type: 'success' })
+        
+        // Close modal immediately for better UX
+        closeModal();
+        newQuery.value = { subject: '', tender: '', description: '' };
+        
+        // Refresh data in background
+        fetchQueries(); 
     } else {
       const error = await response.json();
       console.error("Submission failed:", error);
+      createToast(error.message || 'Submission failed', { type: 'danger' })
     }
   } catch (err) {
     console.error("Network error:", err);
+    createToast('Network error occurred. Please try again.', { type: 'danger' })
+  } finally {
+    isSubmitting.value = false
   }
+}
+
+const isSubmittingRequest = ref(false)
+
+const submitRequest = async () => {
+    if (!newRequest.value.tender || !newRequest.value.type || !newRequest.value.reason) {
+        createToast("Please fill in all fields.", { type: 'warning' });
+        return;
+    }
+
+    isSubmittingRequest.value = true
+    try {
+        const response = await secureFetch('/api/method/supplier_portal.api.create_rfq_questionnaire', {
+            method: 'POST',
+            body: JSON.stringify({
+                rfq: newRequest.value.tender,
+                subject: newRequest.value.type,
+                query: newRequest.value.reason
+            }),
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            createToast('Questionnaire requested successfully', { type: 'success' });
+            closeRequestModal();
+            newRequest.value = { tender: '', type: '', reason: '' };
+            fetchQueries(); // Refresh list
+        } else {
+            const error = await response.json();
+            createToast(error.message || 'Request failed', { type: 'danger' });
+        }
+    } catch (err) {
+        console.error("Network error:", err);
+        createToast('Network error occurred.', { type: 'danger' });
+    } finally {
+        isSubmittingRequest.value = false
+    }
 }
 
 // --- Logic: Computed Properties ---
 
 // Dynamic Stats calculation
 const stats = computed(() => {
-  const totalQueries = queries.value.length
-  const pending = queries.value.filter(q => q.status === 'Pending').length
-  const answered = queries.value.filter(q => q.status === 'Answered').length
+  const totalQueries = queries.value.filter(q => q.type === 'Query').length
+  const pending = queries.value.filter(q => q.type === 'Query' && q.status === 'Pending').length
+  const answered = queries.value.filter(q => q.type === 'Query' && q.status === 'Answered').length
+  const questionnaires = queries.value.filter(q => q.type === 'Questionnaire').length
 
   return [
     { name: 'Total Queries', value: totalQueries.toString(), icon: MessageSquare, color: 'text-blue-600', bg: 'bg-blue-50' },
     { name: 'Pending', value: pending.toString(), icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50' },
     { name: 'Answered', value: answered.toString(), icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
-    { name: 'Questionnaires', value: '0', icon: FileQuestion, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { name: 'Questionnaires', value: questionnaires.toString(), icon: FileQuestion, color: 'text-indigo-600', bg: 'bg-indigo-50' },
   ]
 })
 
@@ -128,6 +268,19 @@ const filteredQueries = computed(() => {
   )
 })
 
+// Template update for button
+/*
+<div class="mt-6">
+    <button @click="submitRequest" :disabled="isSubmittingRequest" type="button" class="inline-flex w-full justify-center rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 gap-2 items-center transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+    <svg v-if="isSubmittingRequest" class="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+    {{ isSubmittingRequest ? 'Submitting...' : 'Submit Request' }}
+    </button>
+</div>
+*/
+
 // --- Modal Controls ---
 const openModal = () => isQueryModalOpen.value = true
 const closeModal = () => {
@@ -137,7 +290,6 @@ const closeModal = () => {
 
 const openRequestModal = () => isRequestModalOpen.value = true
 const closeRequestModal = () => isRequestModalOpen.value = false
-const submitRequest = () => { /* Logic similar to submitQuery */ }
 
 // --- Lifecycle ---
 onMounted(() => {
@@ -296,8 +448,13 @@ onMounted(() => {
           </div>
           
           <div class="mt-6">
-             <button @click="submitQuery" type="button" class="inline-flex w-full justify-center rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 gap-2 items-center transition-all">
-               <Send class="h-4 w-4" /> Submit Query
+             <button @click="submitQuery" :disabled="isSubmitting" type="button" class="inline-flex w-full justify-center rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 gap-2 items-center transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+               <svg v-if="isSubmitting" class="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24">
+                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                   <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+               </svg>
+               <Send v-else class="h-4 w-4" /> 
+               {{ isSubmitting ? 'Submitting...' : 'Submit Query' }}
              </button>
           </div>
         </div>
@@ -341,8 +498,12 @@ onMounted(() => {
           </div>
           
           <div class="mt-6">
-             <button @click="submitRequest" type="button" class="inline-flex w-full justify-center rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-all">
-               Submit Request
+             <button @click="submitRequest" :disabled="isSubmittingRequest" type="button" class="inline-flex w-full justify-center rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 gap-2 items-center transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+               <svg v-if="isSubmittingRequest" class="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24">
+                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                   <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+               </svg>
+               {{ isSubmittingRequest ? 'Submitting...' : 'Submit Request' }}
              </button>
           </div>
         </div>

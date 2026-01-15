@@ -63,7 +63,18 @@ export const useAuthStore = defineStore('auth', () => {
             const data = await response.json()
 
             if (response.ok && data.message === 'Logged In') {
-                // Fetch full details including Company Name (Custom logic retained for functionality)
+                // 1. Verify Session immediately
+                const verifyRes = await fetch(`/api/method/supplier_portal.api.get_logged_user?t=${Date.now()}`, {
+                    credentials: 'include',
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
+                const verifyData = await verifyRes.json();
+
+                if (!verifyData.message || verifyData.message === 'Guest') {
+                    throw new Error('Session establishment failed. Please check your browser cookie settings.');
+                }
+
+                // 2. Fetch full details including Company Name
                 const fullUser = await fetchUserDetails(credentials.email);
 
                 user.value = {
@@ -121,14 +132,18 @@ export const useAuthStore = defineStore('auth', () => {
 
     const logout = async () => {
         try {
-            // User requested POST for logout
+            // User requested logout
             await fetch('/api/method/logout', {
-                method: 'POST',
-                credentials: 'include',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
+                method: 'GET',
+                credentials: 'include'
             })
+
+            // Verify we are Guest
+            await fetch(`/api/method/supplier_portal.api.get_logged_user?t=${Date.now()}`, {
+                credentials: 'include',
+                headers: { 'Cache-Control': 'no-cache' }
+            });
+
         } catch (error) {
             console.error('Logout error:', error)
         } finally {
@@ -156,7 +171,7 @@ export const useAuthStore = defineStore('auth', () => {
     const initializeAuth = async () => {
         // 1. Always check the true server state first (with cache busting)
         try {
-            const response = await fetch(`/api/method/frappe.auth.get_logged_user?t=${Date.now()}`, {
+            const response = await fetch(`/api/method/supplier_portal.api.get_logged_user?t=${Date.now()}`, {
                 credentials: 'include',
                 cache: 'no-store',
                 headers: {

@@ -56,7 +56,7 @@ const getCsrfFromCookie = () => {
 // Initialize state from existing session if possible
 const init = async () => {
     try {
-        const response = await fetch(`/api/method/frappe.auth.get_logged_user?t=${Date.now()}`, {
+        const response = await fetch(`/api/method/supplier_portal.api.get_logged_user?t=${Date.now()}`, {
             method: 'GET',
             credentials: 'include',
             cache: 'no-store',

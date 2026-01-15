@@ -351,6 +351,9 @@ def get_dashboard_stats():
 
 @frappe.whitelist()
 def get_saved_tenders():
+    """
+    Fetches saved tenders for the current user.
+    """
     user = frappe.session.user
     if user == "Guest":
         return []
@@ -359,66 +362,55 @@ def get_saved_tenders():
     frappe.set_user("Administrator")
     
     try:
-        # 1. Get linked suppliers
-        suppliers = frappe.get_all("Portal User", 
-                                filters={"user": user, "parenttype": "Supplier"}, 
-                                fields=["parent"])
-        supplier_names = [s.parent for s in suppliers]
-
-        if not supplier_names:
-            return []
-
-        # 2. Get Saved RFQs linked to these suppliers
-        placeholders = ', '.join(['%s'] * len(supplier_names))
+        # 1. Fetch Saved RFQ records owned by this user
+        saved_rfqs = frappe.get_all("Saved RFQ", 
+            filters={"owner": user}, 
+            fields=["name", "rfq", "creation"]
+        )
         
-        sql = f"""
-            SELECT 
-                saved.name as saved_id,
-                saved.creation as saved_date,
-                rfq.name as rfq_id,
-                rfq.custom_rfq_subject as title,
-                rfq.custom_rfq_category as category,
-                rfq.custom_total_budget_ as value,
-                rfq.custom_bid_submission_last_date as deadline,
-                rfq.custom_bid_status as status,
-                rfq.status as rfq_docstatus
-            FROM `tabSaved RFQ` saved
-            JOIN `tabRequest for Quotation` rfq ON saved.rfq = rfq.name
-            WHERE saved.supplier IN ({placeholders})
-            AND rfq.docstatus < 2 
-            ORDER BY saved.creation DESC
-        """
-        
-        data = frappe.db.sql(sql, tuple(supplier_names), as_dict=True)
-        
-        # Format for frontend
         formatted_data = []
-        for row in data:
-            # Check deadline
+        for saved in saved_rfqs:
+            rfq = frappe.db.get_value("Request for Quotation", saved.rfq, 
+                ["name", "custom_rfq_subject", "custom_rfq_category", "custom_total_budget_", "custom_bid_submission_last_date", "custom_bid_status", "status", "custom_enable_live_bidding"],
+                as_dict=True
+            )
+            
+            if not rfq:
+                continue
+                
+            if rfq.status == "Cancelled" or frappe.db.get_value("Request for Quotation", saved.rfq, "docstatus") == 2:
+                continue
+
             deadline_status = ""
             deadline_str = ""
-            if row.deadline:
+            if rfq.custom_bid_submission_last_date:
                 from frappe.utils import getdate, today
-                deadline_date = getdate(row.deadline)
+                deadline_date = getdate(rfq.custom_bid_submission_last_date)
                 deadline_str = deadline_date.strftime("%d %b %Y")
                 if deadline_date < getdate(today()):
                      deadline_status = "Deadline passed"
             
-            # Count bids (optional)
-            bids_count = frappe.db.count("Supplier Quotation", {"request_for_quotation": row.rfq_id, "docstatus": 1})
+            # Count bids: Link is in the child table 'Supplier Quotation Item'
+            # We count unique Supplier Quotations (parents) that reference this RFQ
+            bids_count = len(frappe.get_all("Supplier Quotation Item", 
+                filters={"request_for_quotation": rfq.name, "docstatus": 1}, 
+                pluck="parent", 
+                distinct=True
+            ))
 
             formatted_data.append({
-                "id": row.rfq_id,
-                "saved_id": row.saved_id,
-                "title": row.title or row.rfq_id,
-                "category": row.category or "General",
-                "value": row.value or 0,
+                "id": rfq.name,
+                "saved_id": saved.name,
+                "title": rfq.custom_rfq_subject or rfq.name,
+                "category": rfq.custom_rfq_category or "General",
+                "value": rfq.custom_total_budget_ or 0,
                 "deadline": deadline_str,
-                "savedOn": row.saved_date.strftime("%d %b %Y"),
-                "status": row.status or "Active",
+                "savedOn": saved.creation.strftime("%d %b %Y"),
+                "status": rfq.custom_bid_status or "Active",
                 "alerts": False, 
                 "deadlineStatus": deadline_status,
-                "bids": bids_count
+                "bids": bids_count,
+                "liveBidding": rfq.custom_bid_status == 'Active' and rfq.custom_enable_live_bidding
             })
             
         return formatted_data
@@ -455,65 +447,129 @@ def delete_saved_tender(saved_id):
          frappe.log_error(f"Delete Saved Tender Error: {str(e)}")
          return {"status": "error", "message": str(e)}
 
+
 @frappe.whitelist()
-def get_saved_tenders():
+def save_tender(rfq_id):
+    user = frappe.session.user
+    if user == "Guest":
+         frappe.throw(_("Please login to save tenders"), frappe.PermissionError)
+
+    # Get linked supplier
+    supplier_details = get_supplier_details()
+    if not supplier_details:
+         frappe.throw(_("No supplier linked to your account"), frappe.PermissionError)
+         
+    supplier = supplier_details.get("name")
+    
+    # Check if already saved
+    exists = frappe.db.exists("Saved RFQ", {"rfq": rfq_id, "supplier": supplier})
+    if exists:
+        return {"status": "skipped", "message": "Already saved", "name": exists}
+
+    doc = frappe.new_doc("Saved RFQ")
+    doc.rfq = rfq_id
+    doc.supplier = supplier
+    doc.save(ignore_permissions=True)
+    
+    return {"status": "success", "message": "Tender saved", "name": doc.name}
+
+@frappe.whitelist(allow_guest=True)
+def get_logged_user():
+    """
+    Returns the currently logged in user.
+    """
+    return frappe.session.user
+
+@frappe.whitelist(allow_guest=True)
+def get_csrf_token():
+    return frappe.sessions.get_csrf_token()
+
+@frappe.whitelist()
+def get_my_queries():
     user = frappe.session.user
     if user == "Guest":
         return []
-
-    # 1. Improved Supplier Lookup (The "Handshake")
-    # First check the Portal User table
-    supplier = frappe.db.get_value("Portal User", {"user": user}, "parent")
-    print("------------------supplier",supplier)
     
-    # Second check: if not found, check the Supplier table directly
-    if not supplier:
-        supplier = frappe.db.get_value("Supplier", {"email_id": user}, "name")
+    # Get linked suppliers
+    supplier_details = get_supplier_details()
+    supplier = supplier_details.get("name") if supplier_details else None
 
-    # print for debugging in terminal
-    print(f"DEBUG: Logged in User: {user} | Identified Supplier: {supplier}")
+    filters = {"owner": user}
+    # If using supplier field, we could add: if supplier: filters["supplier"] = supplier
+    # But usually owner is enough for creation. 
+    # Let's try to match by owner OR supplier if field exists.
+    
+    or_filters = []
+    or_filters.append(["owner", "=", user])
+    if supplier:
+         # Check if 'supplier' field exists in RFQ Query
+         if frappe.get_meta("RFQ Query").has_field("supplier"):
+             or_filters.append(["supplier", "=", supplier])
 
-    if not supplier:
-        # If this prints 'None', the data on the Supplier card is missing the email link
-        return []
-
-    # 2. Fetch from 'Saved RFQ' using the confirmed Supplier name
-    saved_docs = frappe.get_all("Saved RFQ", 
-        filters={"supplier": supplier},
-        fields=["name", "rfq", "creation"]
+    queries = frappe.get_all("RFQ Query", 
+        filters=or_filters if len(or_filters) > 1 else filters,
+        fields=["name", "subject", "rfq", "query", "response", "status", "creation"],
+        order_by="creation desc"
     )
-    print("-------------------saved_docs",saved_docs)
-    
-    print(f"DEBUG: Found {len(saved_docs)} records for {supplier}")
-    
-    results = []
-    for item in saved_docs:
-        # 3. Pull RFQ details to show on the card
-        rfq_data = frappe.db.get_value("Request for Quotation", item.rfq, 
-            ["name", "custom_bid_status","custom_total_budget_","custom_rfq_category", "custom_bid_submission_last_date"], as_dict=1)
-        
-        if rfq_data:
-            results.append({
-                "saved_id": item.name,      # Backend ID for deletion
-                "id": rfq_data.name,        # PUR-RFQ-2026-00001
-                "status": rfq_data.custom_bid_status ,
-                "saved_on": item.creation,
-                "amount": rfq_data.custom_total_budget_ ,     
-                "category": rfq_data.custom_rfq_category ,
-                "deadline": rfq_data.custom_bid_submission_last_date,
-                
-            })
-            
-    return results
+    return queries
 
 @frappe.whitelist()
-def delete_saved_tender(saved_id):
-    """
-    Safely removes a tender from the saved list.
-    """
-    try:
-        frappe.delete_doc("Saved RFQ", saved_id)
-        return {"status": "success", "message": _("Removed from Saved")}
-    except Exception as e:
-        frappe.log_error(f"Delete Saved Tender Error: {str(e)}")
-        return {"status": "error", "message": str(e)}
+def create_rfq_query(subject, rfq, query):
+    user = frappe.session.user
+    if user == "Guest":
+        frappe.throw(_("Please login to submit a query"), frappe.PermissionError)
+
+    # Validate RFQ access
+    if not frappe.db.exists("Request for Quotation", rfq):
+        frappe.throw(_("Invalid Tender ID"), frappe.ValidationError)
+
+    doc = frappe.new_doc("RFQ Query")
+    doc.subject = subject
+    doc.rfq = rfq
+    doc.query = query
+    doc.status = "Pending"
+    
+    # Link Supplier if possible
+    supplier_details = get_supplier_details()
+    if supplier_details and doc.meta.has_field("supplier"):
+        doc.supplier = supplier_details.get("name")
+    
+    doc.save(ignore_permissions=True)
+    return {"status": "success", "message": "Query submitted successfully", "data": doc.name}
+
+@frappe.whitelist()
+def create_rfq_questionnaire(rfq, subject, query):
+    user = frappe.session.user
+    if user == "Guest":
+        frappe.throw(_("Please login to submit a request"), frappe.PermissionError)
+
+    if not frappe.db.exists("Request for Quotation", rfq):
+        frappe.throw(_("Invalid Tender ID"), frappe.ValidationError)
+
+    doc = frappe.new_doc("RFQ Questionnaires")
+    doc.rfq = rfq
+    doc.subject = subject 
+    # Also set the type field explicitly since the frontend passes the type as 'subject'
+    if doc.meta.has_field("type_of_questionnaire"):
+        doc.type_of_questionnaire = subject
+        
+    doc.query = query
+    doc.date = frappe.utils.today()
+    doc.status = "Pending"
+    
+    doc.save(ignore_permissions=True)
+    return {"status": "success", "message": "Questionnaire requested successfully", "data": doc.name}
+
+@frappe.whitelist()
+def get_my_questionnaires():
+    user = frappe.session.user
+    if user == "Guest":
+        return []
+    
+    # Filter by owner (standard)
+    questionnaires = frappe.get_all("RFQ Questionnaires", 
+        filters={"owner": user},
+        fields=["name", "subject", "rfq", "query", "response", "status", "creation", "date"],
+        order_by="creation desc"
+    )
+    return questionnaires
