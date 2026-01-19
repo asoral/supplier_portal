@@ -1,164 +1,205 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { Package, Plus, Search, Filter, Edit2, Trash2, TrendingUp, Clock, CheckCircle, AlertCircle, X } from 'lucide-vue-next'
+import { ref, computed, onMounted } from 'vue'
+import { 
+  Package, Plus, Search, Filter, Edit2, Trash2, 
+  TrendingUp, Clock, CheckCircle, AlertCircle, X 
+} from 'lucide-vue-next'
 
+// --- State ---
 const activeTab = ref('My Catalog')
 const tabs = ['My Catalog', 'Portal Items']
 const searchQuery = ref('')
+const loading = ref(true)
+const products = ref([]) 
+const currentSupplier = ref('')
 
-const stats = [
-  { name: 'Total Products', value: '4', icon: Package, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-  { name: 'Active Items', value: '3', icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
-  { name: 'Pending Approval', value: '1', icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50' },
-  { name: 'Matched Tenders', value: '10', icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50' },
-]
-
-const products = ref([
-  {
-    id: 1,
-    name: 'Industrial Safety Helmet (IS 2925)',
-    sku: 'SH-IS2925-001',
-    category: 'Safety',
-    unit: 'Nos',
-    description: 'ABS Shell, Ratchet Adjustment, ISI Mark, Ventilated',
-    status: 'active',
-    matches: 3,
-    price: 450,
-    tax: '18% GST',
-    leadTime: '7 days',
-    moq: 100
-  },
-  {
-    id: 2,
-    name: 'Safety Shoes (Steel Toe)',
-    sku: 'SS-ST-001',
-    category: 'Safety',
-    unit: 'Pairs',
-    description: 'PU Sole, Steel Toe Cap, Oil Resistant, Ankle Support',
-    status: 'active',
-    matches: 5,
-    price: 1200,
-    tax: '18% GST',
-    leadTime: '10 days',
-    moq: 50
-  },
-  {
-    id: 3,
-    name: 'Cut Resistant Gloves (Level 5)',
-    sku: 'GL-CR5-001',
-    category: 'Safety',
-    unit: 'Pairs',
-    description: 'HPPE Fiber, PU Coated Palm, EN388 Certified',
-    status: 'active',
-    matches: 2,
-    price: 280,
-    tax: '18% GST',
-    leadTime: '5 days',
-    moq: 200
-  },
-  {
-    id: 4,
-    name: 'MS Flat Bar 50x10mm',
-    sku: 'MS-FB-5010',
-    category: 'Raw Materials',
-    unit: 'Kg',
-    description: 'IS 2062 Grade E250, Mill Finish',
-    status: 'pending',
-    price: 65,
-    tax: '18% GST',
-    leadTime: '14 days',
-    moq: 1000
-  }
-])
-
-const filteredProducts = computed(() => {
-  return products.value.filter(item => 
-    item.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-    item.sku.toLowerCase().includes(searchQuery.value.toLowerCase())
-  )
-})
-// Add Product Modal Logic
+// --- Modal State (ONLY ONE DECLARATION HERE) ---
 const isAddProductModalOpen = ref(false)
 const isEditing = ref(false)
-const editingId = ref(null)
-
-const newProduct = ref({
-  name: '',
-  sku: '',
-  category: '',
-  unit: '',
-  price: '',
-  tax: '18%',
-  moq: '',
-  leadTime: '',
-  description: ''
+const newProduct = ref({ 
+   id: '',
+  name: '', 
+  sku: '', 
+  category: '', 
+  unit: '', 
+  price: 0, 
+  tax: '', 
+  moq: '', 
+  leadTime: '', 
+  description: '' 
 })
 
-const openAddModal = () => {
-  isEditing.value = false
-  editingId.value = null
-  newProduct.value = { name: '', sku: '', category: '', unit: '', price: '', tax: '18%', moq: '', leadTime: '', description: '' }
-  isAddProductModalOpen.value = true
-}
-
 const openEditModal = (product) => {
-  isEditing.value = true
-  editingId.value = product.id
-  // Parse tax and leadTime to raw values for inputs
-  const taxVal = product.tax ? product.tax.replace(' GST', '').trim() : '18%'
-  const leadVal = product.leadTime ? product.leadTime.replace(' days', '').trim() : ''
+  isEditing.value = true;
   
-  newProduct.value = { 
-    ...product,
-    tax: taxVal, // Ensure formatting
-    leadTime: leadVal
+  newProduct.value = {
+    id: product.id, 
+    name: product.name,
+    sku: product.sku,
+    category: product.category,
+    unit: product.unit || 'Nos',
+    price: product.price,
+    tax: product.tax,
+    moq: product.min_order_qty || 1,
+    leadTime: item.lead_time_days || 'N/A',
+    description: product.description
+  };
+  
+  isAddProductModalOpen.value = true;
+};
+
+// --- Fetch Data ---
+const fetchProducts = async () => {
+  loading.value = true;
+  try {
+    const response = await fetch('/api/method/supplier_portal.api.get_catalog_items');
+    if (!response.ok) throw new Error('Network response was not ok');
+    const data = await response.json();
+
+    if (data && data.message) {
+      products.value = data.message.items || [];
+      currentSupplier.value = data.message.current_supplier || '';
+    }
+  } catch (error) {
+    console.error("Failed to load products:", error);
+  } finally {
+    loading.value = false;
   }
-  isAddProductModalOpen.value = true
-}
+};
+
+onMounted(() => {
+  fetchProducts();
+});
+
+// --- Computed Filtering ---
+const filteredProducts = computed(() => {
+  if (!products.value) return [];
+  return products.value.filter(item => {
+    const matchesSearch = !searchQuery.value || 
+      item.name?.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+      item.sku?.toLowerCase().includes(searchQuery.value.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    if (activeTab.value === 'My Catalog') {
+      return item.is_my_item === true;
+    } else {
+      return item.is_purchase_item == 1 && item.is_my_item === false;
+    }
+  });
+});
+
+// --- Actions ---
+const openAddModal = () => {
+  isEditing.value = false;
+  newProduct.value = { id: '', name: '', sku: '', category: '', unit: '', price: 0, tax: '', moq: '', leadTime: '', description: '' };
+  isAddProductModalOpen.value = true;
+};
 
 const closeAddModal = () => {
-  isAddProductModalOpen.value = false
-  isEditing.value = false
-  editingId.value = null
-  newProduct.value = { name: '', sku: '', category: '', unit: '', price: '', tax: '18%', moq: '', leadTime: '', description: '' }
-}
+  isAddProductModalOpen.value = false;
+};
 
-const submitProduct = () => {
-  if (!newProduct.value.name) return
-  
-  const productData = {
-    name: newProduct.value.name,
-    sku: newProduct.value.sku || 'N/A',
-    category: newProduct.value.category || 'Uncategorized',
-    unit: newProduct.value.unit || 'Nos',
-    description: newProduct.value.description || 'No description',
-    status: isEditing.value ? 'active' : 'pending',
-    matches: isEditing.value ? (products.value.find(p => p.id === editingId.value)?.matches || 0) : 0,
-    price: newProduct.value.price || 0,
-    tax: newProduct.value.tax + ' GST',
-    leadTime: newProduct.value.leadTime ? newProduct.value.leadTime + ' days' : '7 days',
-    moq: newProduct.value.moq || 1
+const submitProduct = async () => {
+  if (!newProduct.value.name) {
+    alert("Please enter a product name");
+    return;
   }
 
-  if (isEditing.value && editingId.value) {
-    const index = products.value.findIndex(p => p.id === editingId.value)
-    if (index !== -1) {
-       products.value[index] = { ...products.value[index], ...productData }
+  try {
+    loading.value = true;
+    
+    // Choose the correct API endpoint based on the mode
+    const method = isEditing.value 
+      ? '/api/method/supplier_portal.api.update_supplier_item' 
+      : '/api/method/supplier_portal.api.create_supplier_item';
+
+    const response = await fetch(method, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newProduct.value) 
+    });
+
+    const data = await response.json();
+    
+    if (data.message === "success") {
+      closeAddModal();
+      await fetchProducts(); // Refresh catalog to show updated info
+      alert(isEditing.value ? "Product updated successfully!" : "Product added successfully!");
+    } else {
+      alert("Error: " + (data.message || "Failed to save product"));
     }
-  } else {
-    products.value.unshift({
-      id: Date.now(),
-      ...productData
-    })
+  } catch (error) {
+    console.error("Submission failed:", error);
+    alert("An error occurred while saving the product.");
+  } finally {
+    loading.value = false;
   }
-  
-  closeAddModal()
-}
+};
+
+const addToMyCatalog = async (product) => {
+  try {
+    const response = await fetch('/api/method/supplier_portal.api.add_to_catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: product.id })
+    });
+    const data = await response.json();
+    if (data.message === "success") {
+      product.is_my_item = true; // Moves item to 'My Catalog' instantly
+      alert(`${product.name} added to your catalog!`);
+    }
+  } catch (error) {
+    console.error("Failed to add item:", error);
+  }
+};
+
+const deleteProduct = async (productId) => {
+  if (!confirm("Are you sure you want to remove this item?")) return;
+
+  try {
+    const response = await fetch('/api/method/supplier_portal.api.remove_from_catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: productId }) // This matches the Python argument
+    });
+    
+    const data = await response.json();
+    if (data.message === "success") {
+      await fetchProducts(); // Refresh the list
+    }
+  } catch (err) {
+    console.error("Delete request failed:", err);
+  }
+};
+
+// --- Stats ---
+const stats = computed(() => [
+  { 
+    name: 'Total Products', 
+    value: products.value.filter(p => p.is_my_item).length, 
+    icon: Package, color: 'text-indigo-600', bg: 'bg-indigo-50' 
+  },
+  { 
+    name: 'Active Items', 
+    value: products.value.filter(p => p.is_my_item && p.status === 'active').length, 
+    icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' 
+  },
+  { 
+    name: 'Pending Approval', 
+    value: products.value.filter(p => p.is_my_item && p.status === 'pending').length, 
+    icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50' 
+  },
+  { 
+    name: 'Matched Tenders', 
+    value: products.value.reduce((acc, p) => p.is_my_item ? acc + (p.matches || 0) : acc, 0), 
+    icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50' 
+  },
+]);
 </script>
 
 <template>
   <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-    <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <div>
         <h1 class="text-3xl font-bold tracking-tight text-gray-900">Product Catalog</h1>
@@ -169,7 +210,6 @@ const submitProduct = () => {
       </button>
     </div>
 
-    <!-- Stats Grid -->
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-4 mb-8">
        <div v-for="stat in stats" :key="stat.name" class="rounded-lg bg-white px-4 py-5 shadow sm:p-6 border border-gray-100 flex items-center gap-4">
           <div :class="[stat.bg, 'rounded-md p-3']">
@@ -182,7 +222,6 @@ const submitProduct = () => {
        </div>
     </div>
 
-    <!-- Tabs -->
     <div class="mb-6">
        <div class="flex space-x-2">
           <button
@@ -191,9 +230,9 @@ const submitProduct = () => {
              @click="activeTab = tab"
              :class="[
                 activeTab === tab 
-                   ? 'bg-gray-100 text-gray-900 font-semibold' 
+                   ? 'bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-700/10 font-semibold' 
                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50',
-                'rounded-md px-3 py-2 text-sm font-medium transition-colors'
+                'rounded-md px-4 py-2 text-sm font-medium transition-colors'
              ]"
           >
              {{ tab }}
@@ -201,7 +240,6 @@ const submitProduct = () => {
        </div>
     </div>
 
-    <!-- Controls -->
     <div class="flex flex-col sm:flex-row gap-4 mb-6">
        <div class="relative flex-grow">
           <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -220,153 +258,146 @@ const submitProduct = () => {
        </button>
     </div>
 
-    <!-- Product List -->
-    <div class="space-y-4">
-       <div v-for="product in filteredProducts" :key="product.id" class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
-          <div class="flex flex-col lg:flex-row gap-6">
-             <!-- Icon -->
-             <div class="flex-shrink-0">
-                <div class="h-16 w-16 rounded-lg bg-gray-100 flex items-center justify-center">
-                   <Package class="h-8 w-8 text-gray-400" />
+    <div v-if="loading" class="flex flex-col items-center justify-center py-20 bg-white rounded-xl border border-gray-200">
+       <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mb-4"></div>
+       <p class="text-gray-500">Fetching products...</p>
+    </div>
+
+    <div v-else class="space-y-4">
+       <div v-if="filteredProducts.length === 0" class="text-center py-20 bg-white rounded-xl border-2 border-dashed border-gray-200">
+          <Package class="mx-auto h-12 w-12 text-gray-300 mb-4" />
+          <h3 class="text-sm font-semibold text-gray-900">No products found</h3>
+          <p class="mt-1 text-sm text-gray-500">Try adjusting your search or filters.</p>
+       </div>
+
+      <div v-for="product in filteredProducts" :key="product.id">
+          <div v-if="activeTab === 'My Catalog'" class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
+             <div class="flex flex-col lg:flex-row gap-6">
+                <div class="flex-shrink-0">
+                   <div class="h-16 w-16 rounded-lg bg-gray-50 flex items-center justify-center border border-gray-100">
+                      <Package class="h-8 w-8 text-gray-400" />
+                   </div>
+                </div>
+
+                <div class="flex-grow">
+                   <div class="flex flex-wrap items-center gap-2 mb-1">
+                      <h3 class="text-lg font-bold text-gray-900">{{ product.name }}</h3>
+                      <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset bg-green-50 text-green-700 ring-green-600/20">
+                         {{ product.status }}
+                      </span>
+                      <span v-if="product.matches" class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
+                         <TrendingUp class="h-3 w-3" /> {{ product.matches }} matches
+                      </span>
+                   </div>
+                   <div class="text-sm text-gray-500 mb-2">
+                       <span class="font-bold text-gray-700">SKU:</span> {{ product.sku || 'N/A' }}
+                       <span class="mx-2 text-gray-300">•</span>
+                       <span class="font-bold text-gray-700">Category:</span> {{ product.category }}
+                       <span class="mx-2 text-gray-300">•</span>
+                       <span class="font-bold text-gray-700">Unit:</span> {{ product.unit || 'Nos' }}
+                   </div>
+                   <p class="text-sm text-gray-600 leading-relaxed">{{ product.description }}</p>
+                </div>
+
+                <div class="flex lg:flex-col items-center lg:items-end justify-between lg:justify-center gap-1 min-w-[180px] border-t lg:border-t-0 lg:border-l border-gray-100 pt-4 lg:pt-0 lg:pl-8">
+                    <div class="text-right">
+                       <div class="text-2xl font-bold text-gray-900">₹{{ Number(product.price).toLocaleString() }}</div>
+                       <div class="text-xs text-gray-400 font-medium">+ {{ product.tax }}</div>
+                    </div>
+                    <div class="lg:mt-4 text-right text-sm text-gray-500 leading-tight">
+                       <div class="flex justify-end gap-1">
+                           <span class="text-gray-400">Lead:</span> 
+                           <span class="font-medium text-gray-700">{{ product.leadTime }} </span>
+                        </div>
+                       <div class="flex justify-end gap-1">
+                         <span class="text-gray-400">MOQ:</span> 
+                         <span class="font-medium text-gray-700">{{ product.moq }}</span>
+                       </div>
+                    </div>
+                    <div class="flex gap-2 mt-4">
+                        <button @click="openEditModal(product)" class="p-2 text-gray-400 hover:text-indigo-600 rounded-md hover:bg-gray-50 transition-colors">
+                           <Edit2 class="h-4 w-4" />
+                        </button>
+                        <button @click="deleteProduct(product.id)" class="p-2 text-gray-400 hover:text-red-600 rounded-md hover:bg-gray-50 transition-colors">
+                          <Trash2 class="h-4 w-4" />
+                       </button>
+                    </div>
                 </div>
              </div>
+          </div>
 
-             <!-- Details -->
+          <div v-else class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm flex items-center gap-4 hover:border-indigo-200 transition-colors">
+             <div class="h-12 w-12 rounded bg-gray-50 flex items-center justify-center flex-shrink-0">
+                <Package class="h-6 w-6 text-gray-400" />
+             </div>
              <div class="flex-grow">
-                <div class="flex flex-wrap items-center gap-2 mb-1">
-                   <h3 class="text-base font-semibold text-gray-900">{{ product.name }}</h3>
-                   <span 
-                      class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset"
-                      :class="product.status === 'active' ? 'bg-green-50 text-green-700 ring-green-600/20' : 'bg-orange-50 text-orange-700 ring-orange-600/20'"
-                   >
-                      {{ product.status }}
-                   </span>
-                   <span v-if="product.matches" class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
-                      <TrendingUp class="h-3 w-3" /> {{ product.matches }} matches
-                   </span>
-                </div>
-                
-                <div class="text-xs text-gray-500 mb-2 space-x-1">
-                    <span class="font-medium text-gray-700">SKU:</span> {{ product.sku }}
-                    <span>•</span>
-                    <span class="font-medium text-gray-700">Category:</span> {{ product.category }}
-                    <span>•</span>
-                    <span class="font-medium text-gray-700">Unit:</span> {{ product.unit }}
-                </div>
-
-                <p class="text-sm text-gray-600 mb-3">{{ product.description }}</p>
+                <h3 class="text-sm font-bold text-gray-900">{{ product.name }}</h3>
+                <p class="text-xs text-gray-500">Category: {{ product.category }} • Unit: {{ product.unit }}</p>
              </div>
-
-             <!-- Pricing & Actions -->
-             <div class="flex lg:flex-col items-center lg:items-end justify-between lg:justify-center gap-4 min-w-[150px] border-t lg:border-t-0 lg:border-l border-gray-100 pt-4 lg:pt-0 lg:pl-6">
-                 <div class="text-right">
-                    <div class="text-lg font-bold text-gray-900">₹{{ product.price.toLocaleString() }}</div>
-                    <div class="text-xs text-gray-500">+ {{ product.tax }}</div>
-                 </div>
-
-                 <div class="text-right text-xs text-gray-500 space-y-1">
-                    <div>Lead: {{ product.leadTime }}</div>
-                    <div>MOQ: {{ product.moq }}</div>
-                 </div>
-
-                 <div class="flex gap-2">
-                     <button @click="openEditModal(product)" class="p-1.5 text-gray-400 hover:text-indigo-600 rounded hover:bg-gray-100">
-                        <Edit2 class="h-4 w-4" />
-                     </button>
-                    <button class="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-gray-100">
-                       <Trash2 class="h-4 w-4" />
-                    </button>
-                 </div>
-             </div>
+            <button @click="addToMyCatalog(product)" class="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-md text-sm font-semibold text-gray-700 hover:bg-gray-50 transition whitespace-nowrap">
+               <Plus class="h-4 w-4" /> Add to My Catalog
+            </button>
           </div>
        </div>
     </div>
-    <!-- Add Product Modal -->
-    <div v-if="isAddProductModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
-      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeAddModal"></div>
-      
-      <div class="relative transform overflow-hidden rounded-xl bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
-        <div class="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
-          <button type="button" class="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none" @click="closeAddModal">
-            <span class="sr-only">Close</span>
-            <X class="h-5 w-5" aria-hidden="true" />
+
+    <div v-if="isAddProductModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div class="w-full max-w-2xl rounded-xl bg-white shadow-2xl overflow-hidden">
+        <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <h3 class="text-lg font-bold text-gray-900">{{ isEditing ? 'Edit Product' : 'Add New Product' }}</h3>
+          <button @click="closeAddModal" class="text-gray-400 hover:text-gray-500">
+            <X class="h-5 w-5" />
           </button>
         </div>
-        
-        <div>
-          <h3 class="text-lg font-bold leading-6 text-gray-900 mb-6" id="modal-title">{{ isEditing ? 'Edit Product' : 'Add New Product' }}</h3>
-          <div class="space-y-4">
-             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-               <div>
-                 <label for="prod-name" class="block text-sm font-semibold text-gray-900 mb-1.5">Product Name</label>
-                 <input type="text" id="prod-name" v-model="newProduct.name" placeholder="Enter product name" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
-               </div>
-               <div>
-                  <label for="sku" class="block text-sm font-semibold text-gray-900 mb-1.5">SKU</label>
-                  <input type="text" id="sku" v-model="newProduct.sku" placeholder="Enter SKU" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
-               </div>
-             </div>
-
-             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label for="category" class="block text-sm font-semibold text-gray-900 mb-1.5">Category</label>
-                  <select id="category" v-model="newProduct.category" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
-                     <option value="" disabled>Select category</option>
-                     <option>Safety</option>
-                     <option>Raw Materials</option>
-                     <option>Electronics</option>
-                     <option>Construction</option>
-                  </select>
-                </div>
-                <div>
-                   <label for="unit" class="block text-sm font-semibold text-gray-900 mb-1.5">Unit of Measure</label>
-                   <select id="unit" v-model="newProduct.unit" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
-                       <option value="" disabled>Select unit</option>
-                       <option>Nos</option>
-                       <option>Pairs</option>
-                       <option>Kg</option>
-                       <option>Liters</option>
-                       <option>Meters</option>
-                   </select>
-                </div>
-             </div>
-
-             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                   <label for="price" class="block text-sm font-semibold text-gray-900 mb-1.5">Base Price (₹)</label>
-                   <input type="number" id="price" v-model="newProduct.price" placeholder="0.00" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
-                </div>
-                 <div>
-                   <label for="gst" class="block text-sm font-semibold text-gray-900 mb-1.5">GST Rate (%)</label>
-                   <select id="gst" v-model="newProduct.tax" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
-                       <option>5%</option>
-                       <option>12%</option>
-                       <option>18%</option>
-                       <option>28%</option>
-                   </select>
-                </div>
-                 <div>
-                   <label for="moq" class="block text-sm font-semibold text-gray-900 mb-1.5">MOQ</label>
-                   <input type="number" id="moq" v-model="newProduct.moq" placeholder="Minimum order qty" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
-                </div>
-             </div>
-
-             <div>
-                <label for="lead-time" class="block text-sm font-semibold text-gray-900 mb-1.5">Lead Time (Days)</label>
-                <input type="text" id="lead-time" v-model="newProduct.leadTime" placeholder="Delivery lead time" class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
-             </div>
-
-             <div>
-                <label for="specs" class="block text-sm font-semibold text-gray-900 mb-1.5">Specifications</label>
-                <textarea id="specs" v-model="newProduct.description" rows="3" placeholder="Enter product specifications..." class="block w-full rounded-lg border-0 py-2.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"></textarea>
-             </div>
+        <div class="p-6 max-h-[80vh] overflow-y-auto">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="col-span-1">
+              <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Product Name</label>
+              <input v-model="newProduct.name" type="text" placeholder="Enter product name" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+            </div>
+            <div class="col-span-1">
+              <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">SKU</label>
+              <input v-model="newProduct.sku" type="text" placeholder="Enter SKU" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+            </div>
+            <div class="col-span-1">
+              <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Category</label>
+              <input v-model="newProduct.category" type="text" placeholder="e.g. Hardware" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+            </div>
+            <div class="col-span-1">
+              <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Unit of Measure</label>
+              <input v-model="newProduct.unit" type="text" placeholder="e.g. Nos" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+            </div>
+            <div class="col-span-1">
+              <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Base Price (₹)</label>
+              <input v-model="newProduct.price" type="number" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+            </div>
+            <div class="col-span-1">
+              <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">GST Rate (%)</label>
+              <select v-model="newProduct.tax" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                <option value="18%">18%</option>
+                <option value="12%">12%</option>
+                <option value="5%">5%</option>
+              </select>
+            </div>
+            <div class="col-span-1">
+              <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">MOQ</label>
+              <input v-model="newProduct.moq" type="number" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+            </div>
+            <div class="col-span-1">
+              <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Lead Time (Days)</label>
+              <input v-model="newProduct.leadTime" type="text" placeholder="Delivery lead time" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Specifications</label>
+              <textarea v-model="newProduct.description" rows="3" placeholder="Enter product specifications..." class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
+            </div>
           </div>
-          
-          <div class="mt-6">
-             <button @click="submitProduct" type="button" class="inline-flex w-full justify-center rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-all">
-               {{ isEditing ? 'Update Product' : 'Add to Catalog' }}
-             </button>
-          </div>
+        </div>
+        <div class="bg-gray-50 px-6 py-4 flex justify-end gap-3">
+          <button @click="closeAddModal" class="px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-md">Cancel</button>
+          <button @click="submitProduct" class="px-6 py-2 bg-indigo-600 text-sm font-semibold text-white rounded-md hover:bg-indigo-500 shadow-sm">
+            {{ isEditing ? 'Update Catalog' : 'Add to Catalog' }}
+          </button>
         </div>
       </div>
     </div>
