@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useAuthStore } from '../stores/auth'
 import { 
   Package, Plus, Search, Filter, Edit2, Trash2, 
   TrendingUp, Clock, CheckCircle, AlertCircle, X 
@@ -49,10 +50,14 @@ const openEditModal = (product) => {
 };
 
 // --- Fetch Data ---
+const authStore = useAuthStore()
+const { secureFetch } = authStore
+
+// --- Fetch Data ---
 const fetchProducts = async () => {
   loading.value = true;
   try {
-    const response = await fetch('/api/method/supplier_portal.api.get_catalog_items');
+    const response = await secureFetch('/api/method/supplier_portal.api.get_catalog_items');
     if (!response.ok) throw new Error('Network response was not ok');
     const data = await response.json();
 
@@ -91,6 +96,11 @@ const filteredProducts = computed(() => {
 
 // --- Actions ---
 const openAddModal = () => {
+  // Check auth first
+  if (!authStore.user) {
+      alert("Please login to manage products.");
+      return;
+  }
   isEditing.value = false;
   newProduct.value = { id: '', name: '', sku: '', category: '', unit: '', price: 0, tax: '', moq: '', leadTime: '', description: '' };
   isAddProductModalOpen.value = true;
@@ -114,9 +124,8 @@ const submitProduct = async () => {
       ? '/api/method/supplier_portal.api.update_supplier_item' 
       : '/api/method/supplier_portal.api.create_supplier_item';
 
-    const response = await fetch(method, {
+    const response = await secureFetch(method, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newProduct.value) 
     });
 
@@ -138,16 +147,21 @@ const submitProduct = async () => {
 };
 
 const addToMyCatalog = async (product) => {
+  if (!authStore.user) {
+      alert("Please login to add items to your catalog.");
+      return;
+  }
   try {
-    const response = await fetch('/api/method/supplier_portal.api.add_to_catalog', {
+    const response = await secureFetch('/api/method/supplier_portal.api.add_to_catalog', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ item_id: product.id })
     });
     const data = await response.json();
     if (data.message === "success") {
       product.is_my_item = true; // Moves item to 'My Catalog' instantly
       alert(`${product.name} added to your catalog!`);
+    } else {
+       alert("Failed: " + (data.message || "Unknown error"));
     }
   } catch (error) {
     console.error("Failed to add item:", error);
@@ -158,9 +172,8 @@ const deleteProduct = async (productId) => {
   if (!confirm("Are you sure you want to remove this item?")) return;
 
   try {
-    const response = await fetch('/api/method/supplier_portal.api.remove_from_catalog', {
+    const response = await secureFetch('/api/method/supplier_portal.api.remove_from_catalog', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ item_id: productId }) // This matches the Python argument
     });
     

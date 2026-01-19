@@ -65,10 +65,10 @@ def register_vendor(company_name, email, contact_person, phone, gst=None, passwo
         frappe.log_error("Vendor Registration Error")
         return {"status": "error", "message": str(e)}
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_supplier_details():
     user = frappe.session.user
-    if user == "Guest":
+    if not user or user == "Guest":
         return {}
     
     # Infer child doctype for portal_users
@@ -101,7 +101,7 @@ def get_active_tenders(limit=20, offset=0):
     invited_rfq_names = []
     
     try:
-        if user != "Guest":
+        if user and user != "Guest":
             # 1. Broadly find all Suppliers this user is linked to
             # We don't filter by parenttype to be safe, assuming 'parent' is the Supplier
             suppliers = [s.parent for s in frappe.get_all("Portal User", filters={"user": user}, fields=["parent"])]
@@ -174,7 +174,7 @@ def get_tender_details(name):
     is_published = frappe.db.get_value("Request for Quotation", name, "custom_publish_on_website")
     if is_published:
         has_access = True
-    elif user != "Guest":
+    elif user and user != "Guest":
         # Check if user is linked to a supplier invited to this RFQ
         supplier_details = get_supplier_details()
         if supplier_details:
@@ -257,10 +257,10 @@ def get_tender_details(name):
         "schedule_date": doc.schedule_date
     }
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_dashboard_stats():
     user = frappe.session.user
-    if user == "Guest":
+    if not user or user == "Guest":
         return {"error": "Not logged in"}
     
     # Context switch to Admin for full visibility
@@ -349,13 +349,14 @@ def get_dashboard_stats():
     finally:
         frappe.set_user(original_user)
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_saved_tenders():
     """
+    # Fixed for guest access
     Fetches saved tenders for the current user.
     """
     user = frappe.session.user
-    if user == "Guest":
+    if not user or user == "Guest":
         return []
 
     original_user = frappe.session.user
@@ -421,10 +422,10 @@ def get_saved_tenders():
     finally:
         frappe.set_user(original_user)
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def delete_saved_tender(saved_id):
     user = frappe.session.user
-    if user == "Guest":
+    if not user or user == "Guest":
         return {"status": "error", "message": "Unauthorized"}
         
     try:
@@ -448,10 +449,10 @@ def delete_saved_tender(saved_id):
          return {"status": "error", "message": str(e)}
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def save_tender(rfq_id):
     user = frappe.session.user
-    if user == "Guest":
+    if not user or user == "Guest":
          frappe.throw(_("Please login to save tenders"), frappe.PermissionError)
 
     # Get linked supplier
@@ -478,16 +479,16 @@ def get_logged_user():
     """
     Returns the currently logged in user.
     """
-    return frappe.session.user
+    return frappe.session.user or "Guest"
 
 @frappe.whitelist(allow_guest=True)
 def get_csrf_token():
     return frappe.sessions.get_csrf_token()
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_my_queries():
     user = frappe.session.user
-    if user == "Guest":
+    if not user or user == "Guest":
         return []
     
     # Get linked suppliers
@@ -513,10 +514,10 @@ def get_my_queries():
     )
     return queries
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def create_rfq_query(subject, rfq, query):
     user = frappe.session.user
-    if user == "Guest":
+    if not user or user == "Guest":
         frappe.throw(_("Please login to submit a query"), frappe.PermissionError)
 
     # Validate RFQ access
@@ -537,10 +538,10 @@ def create_rfq_query(subject, rfq, query):
     doc.save(ignore_permissions=True)
     return {"status": "success", "message": "Query submitted successfully", "data": doc.name}
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def create_rfq_questionnaire(rfq, subject, query):
     user = frappe.session.user
-    if user == "Guest":
+    if not user or user == "Guest":
         frappe.throw(_("Please login to submit a request"), frappe.PermissionError)
 
     if not frappe.db.exists("Request for Quotation", rfq):
@@ -560,10 +561,10 @@ def create_rfq_questionnaire(rfq, subject, query):
     doc.save(ignore_permissions=True)
     return {"status": "success", "message": "Questionnaire requested successfully", "data": doc.name}
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_my_questionnaires():
     user = frappe.session.user
-    if user == "Guest":
+    if not user or user == "Guest":
         return []
     
     # Filter by owner (standard)
@@ -575,7 +576,7 @@ def get_my_questionnaires():
     return questionnaires
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_catalog_items():
     user = frappe.session.user
 
@@ -639,7 +640,7 @@ def get_catalog_items():
     }
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def add_to_catalog(item_id):
     user = frappe.session.user
     supplier = frappe.db.get_value("Portal User", {"user": user, "parenttype": "Supplier"}, "parent")
@@ -656,7 +657,7 @@ def add_to_catalog(item_id):
     return "success"
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def create_supplier_item():
     data = frappe.local.form_dict
     user = frappe.session.user
@@ -681,7 +682,7 @@ def create_supplier_item():
     new_item.insert(ignore_permissions=True)
     return "success"
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def remove_from_catalog(item_id):
 
     user = frappe.session.user
@@ -697,7 +698,7 @@ def remove_from_catalog(item_id):
     
     return "success"
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def update_supplier_item(**args):
     item_id = args.get('id')
     if not item_id:
