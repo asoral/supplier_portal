@@ -81,7 +81,7 @@ const stats = ref([
 onMounted(async () => {
     // Check login
     if (!authStore.isAuthenticated) {
-        window.location.href = '/login' // Force redirect if not logged in
+        window.location.href = '/supplier-portal/login' // Force redirect if not logged in
         return
     }
 

@@ -38,10 +38,16 @@ const handleLogin = async (e) => {
      
      // Handle redirect
      const redirect = router.currentRoute.value.query.redirect
+     
+     // Force hard navigation to ensure session cookies are fully respected by the browser/server
+     // for any subsequent requests (including Desk /app).
      if (redirect && !redirect.includes('desk') && !redirect.includes('app')) {
-        router.push(redirect)
+        window.location.href = redirect
+     } else if (authStore.user?.home_page && authStore.user.home_page !== '/index') {
+         // Respect server-provided home page (e.g. /app or /supplier-portal)
+         window.location.href = authStore.user.home_page
      } else {
-        router.push('/dashboard')
+        window.location.href = '/supplier-portal/dashboard'
      }
   } catch (error) {
      console.error("Login failed", error)
