@@ -573,3 +573,147 @@ def get_my_questionnaires():
         order_by="creation desc"
     )
     return questionnaires
+
+
+@frappe.whitelist()
+def get_catalog_items():
+    user = frappe.session.user
+
+    current_supplier = frappe.db.get_value("Portal User", 
+        {"user": user, "parenttype": "Supplier"}, "parent")
+
+    if not current_supplier:
+        current_supplier = frappe.db.get_value("Supplier", {"email_id": user}, "name")
+
+    items = frappe.get_all("Item", 
+        filters={"is_purchase_item": 1},
+        fields=[
+            "name as id", 
+            "item_name as name", 
+            "item_code as sku", 
+            "item_group as category", 
+            "stock_uom as unit", 
+            "description", 
+            "valuation_rate as price", 
+            "is_purchase_item",
+            "lead_time_days",
+            "min_order_qty"
+        ]
+    )
+
+    for item in items:
+        # 1. Initialize ALL local variables at the very start of the loop
+        tax_val = 0 
+        is_my_item = False
+        
+        # Check if it belongs to the supplier catalog
+        is_my_item = frappe.db.exists("Item Supplier", {
+            "parent": item.id,
+            "supplier": current_supplier
+        })
+        
+        item['is_my_item'] = True if is_my_item else False
+        item['status'] = "active"
+        
+        # 2. Lookup Tax Rate
+        # We use frappe.db.get_value with only the parent filter
+        tax_template = frappe.db.get_value("Item Tax", {"parent": item.id}, "item_tax_template")
+
+        if tax_template:
+            # Look up the rate from the detail table
+            found_rate = frappe.db.get_value("Item Tax Template Detail", {"parent": tax_template}, "tax_rate")
+            if found_rate:
+                tax_val = found_rate
+        
+        # Now use the variable
+        item['tax'] = f"{int(tax_val)}% GST"
+
+        # 3. Purchasing Data
+        lead_days = item.get('lead_time_days')
+        item['leadTime'] = f"{lead_days} days" if lead_days else "N/A"
+        item['moq'] = int(item.get('min_order_qty') or 1)
+
+    return {
+        "items": items,
+        "current_supplier": current_supplier
+    }
+
+
+@frappe.whitelist()
+def add_to_catalog(item_id):
+    user = frappe.session.user
+    supplier = frappe.db.get_value("Portal User", {"user": user, "parenttype": "Supplier"}, "parent")
+    
+    if not supplier:
+        frappe.throw("Supplier not found for this user.")
+
+    doc = frappe.get_doc("Item", item_id)
+    doc.append("supplier_items", {
+        "supplier": supplier
+    })
+    doc.save(ignore_permissions=True)
+    
+    return "success"
+
+
+@frappe.whitelist()
+def create_supplier_item():
+    data = frappe.local.form_dict
+    user = frappe.session.user
+    
+    current_supplier = frappe.db.get_value("Portal User", {"user": user}, "parent")
+
+    new_item = frappe.get_doc({
+        "doctype": "Item",
+        "item_code": data.get("sku") or data.get("name"), 
+        "item_name": data.get("name"),
+        "item_group": data.get("category") or "All Item Groups",
+        "stock_uom": data.get("unit") or "Nos",
+        "is_purchase_item": 1,
+        "valuation_rate": data.get("price") or 0,
+        "description": data.get("description"),
+        "supplier_items": [{
+            "supplier": current_supplier,
+            "supplier_part_no": data.get("sku")
+        }]
+    })
+    
+    new_item.insert(ignore_permissions=True)
+    return "success"
+
+@frappe.whitelist()
+def remove_from_catalog(item_id):
+
+    user = frappe.session.user
+    current_supplier = frappe.db.get_value("Portal User", {"user": user}, "parent")
+    
+    if not current_supplier:
+        frappe.throw("Supplier not found for the current user.")
+
+    frappe.db.delete("Item Supplier", {
+        "parent": item_id,
+        "supplier": current_supplier
+    })
+    
+    return "success"
+
+@frappe.whitelist()
+def update_supplier_item(**args):
+    item_id = args.get('id')
+    if not item_id:
+        return "error: missing item id"
+
+    try:
+        item = frappe.get_doc("Item", item_id)
+        
+        item.item_name = args.get('name')
+        item.standard_rate = args.get('price')
+        item.description = args.get('description')
+        item.lead_time_days = args.get('leadTime')
+        item.stock_uom = args.get('unit')
+        
+        item.save(ignore_permissions=True)
+        return "success"
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Update Catalog Error")
+        return f"error: {str(e)}"
