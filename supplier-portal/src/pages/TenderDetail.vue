@@ -7,6 +7,7 @@ import {
   TrendingDown, Banknote, Hourglass, Bookmark, ArrowRight, Zap ,MessageSquare
 } from 'lucide-vue-next'
 import { createToast } from 'mosha-vue-toastify'
+import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,9 +16,16 @@ const isSaved = ref(false)
 const savedTendersList = ref([])
 
 // --- ADDED: Logic to check database on page load ---
+const authStore = useAuthStore()
+const { secureFetch } = authStore
+
+// --- ADDED: Logic to check database on page load ---
 const checkSavedStatus = async () => {
+  // Only check if logged in
+  if (!authStore.isAuthenticated) return;
+
   try {
-    const response = await fetch('/api/method/supplier_portal.api.get_saved_tenders')
+    const response = await secureFetch('/api/method/supplier_portal.api.get_saved_tenders')
     const result = await response.json()
     const savedData = result.message || []
     
@@ -33,69 +41,14 @@ const checkSavedStatus = async () => {
   }
 }
 
-// --- UPDATED: Save logic now handles Delete if already saved ---
-// --- UPDATED: Secure Fetch with Auto-Retry ---
-const getLatestCsrfToken = async () => {
-    try {
-        const response = await fetch('/api/method/supplier_portal.api.get_csrf_token', { 
-            credentials: 'include',
-            cache: 'no-store'
-        });
-        const data = await response.json();
-        
-        if (data.message) {
-            window.csrf_token = data.message;
-            return data.message;
-        }
-    } catch (e) {
-        console.error("Failed to refresh CSRF token", e);
-    }
-    return window.csrf_token;
-}
-
-const secureFetch = async (url, options = {}) => {
-    let token = window.csrf_token;
-    if (!token || token === "None") {
-        token = await getLatestCsrfToken();
-    }
-    
-    // Merge headers carefully
-    const headers = {
-        'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-        'X-Frappe-CSRF-Token': token,
-        ...(options.headers || {})
-    };
-
-    // Ensure credentials are included
-    const fetchOptions = {
-        ...options,
-        headers,
-        credentials: 'include'
-    };
-
-    let response = await fetch(url, fetchOptions);
-    
-    // Check if we need to retry due to CSRF
-    if (!response.ok) {
-         try {
-             const clone = response.clone();
-             const err = await clone.json();
-             
-             if (err.exc_type === 'CSRFTokenError' || response.status === 403 || response.status === 417 || response.status === 400) {
-                 console.warn("CSRF Error, retrying...", err.exc_type);
-                 await new Promise(r => setTimeout(r, 500));
-                 token = await getLatestCsrfToken();
-                 headers['X-Frappe-CSRF-Token'] = token;
-                 response = await fetch(url, { ...fetchOptions, headers });
-             }
-         } catch(e) { }
-    }
-    return response;
-}
-
 const handleSave = async () => {
-  if (!tender.value) return
+  if (!tender.value) return 
+
+  // Double check auth just in case
+  if (!authStore.isAuthenticated) {
+      createToast('Please login to save tenders', { type: 'warning' })
+      return
+  }
 
   // If already blue, we Unsave (Delete)
   if (isSaved.value) {
@@ -133,13 +86,19 @@ const handleSave = async () => {
     const result = await response.json()
 
     if (response.ok) {
-      isSaved.value = true
-      if (result.message && result.message.name) {
-          tender.value.saved_record_name = result.message.name
-      } else {
-          await checkSavedStatus() 
-      }
-      createToast('Tender saved successfully', { type: 'success' })
+        // Handle "Already saved" or "Success"
+        if (result.message && (result.message.status === 'success' || result.message.status === 'skipped')) {
+             isSaved.value = true
+             if (result.message.name) {
+                 tender.value.saved_record_name = result.message.name
+             } else {
+                 await checkSavedStatus() 
+             }
+             createToast(result.message.message || 'Tender saved successfully', { type: 'success' })
+        } else {
+             // Fallback for unexpected success structure
+             createToast('Tender saved', { type: 'success' })
+        }
     } else {
         console.error('Save failed:', result)
         createToast(result.message || 'Failed to save tender', { type: 'danger' })
@@ -302,6 +261,7 @@ onMounted(async () => {
       
       <div class="flex gap-2">
         <button 
+          v-if="authStore.isAuthenticated"
           @click="handleSave"
           class="flex items-center gap-1.5 px-3 py-2 rounded-md border transition-all duration-200"
           :class="isSaved 

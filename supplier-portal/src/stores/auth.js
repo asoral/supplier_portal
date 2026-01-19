@@ -4,21 +4,87 @@ import { ref, computed } from 'vue'
 export const useAuthStore = defineStore('auth', () => {
     const user = ref(null)
     const token = ref(null)
+    const csrfToken = ref(null)
 
     const isAuthenticated = computed(() => !!token.value && !!user.value)
 
-    // Helper to fetch full details (from original auth.js)
+    const getCsrfToken = async () => {
+        try {
+            // If we have a valid global token (e.g. pushed by server), use it first? 
+            // Ideally fetching fresh is safer.
+            const response = await fetch('/api/method/supplier_portal.api.get_csrf_token', {
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            const data = await response.json();
+            if (data.message) {
+                csrfToken.value = data.message;
+                window.csrf_token = data.message; // Sync with global for legacy scripts
+                return data.message;
+            }
+        } catch (e) {
+            console.error("Failed to fetch CSRF token", e);
+        }
+        return csrfToken.value || window.csrf_token;
+    }
+
+    // Robust Fetch wrapper
+    const secureFetch = async (url, options = {}) => {
+        let currentToken = csrfToken.value || window.csrf_token;
+        if (!currentToken || currentToken === "None") {
+            currentToken = await getCsrfToken();
+        }
+
+        const headers = {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-Frappe-CSRF-Token': currentToken,
+            ...(options.headers || {})
+        };
+
+        const fetchOptions = {
+            ...options,
+            headers,
+            credentials: 'include'
+        };
+
+        let response = await fetch(url, fetchOptions);
+
+        // Retry logic for CSRF/Auth errors
+        if (!response.ok) {
+            if (response.status === 403 || response.status === 417 || response.status === 401) {
+                // Try to parse error to see if it's specifically CSRF
+                let isCsrf = false;
+                try {
+                    const clone = response.clone();
+                    const err = await clone.json();
+                    if (err.exc_type === 'CSRFTokenError' || (response.status === 403 && err.message?.includes('CSRF'))) {
+                        isCsrf = true;
+                    }
+                } catch (e) { }
+
+                // If it looks like a token issue (or generic 403 which acts like one), retry once
+                if (isCsrf || response.status === 403) {
+                    console.warn("Potential CSRF/Permission Error, refreshing token and retrying...");
+                    await new Promise(r => setTimeout(r, 200));
+                    currentToken = await getCsrfToken();
+                    headers['X-Frappe-CSRF-Token'] = currentToken;
+                    response = await fetch(url, { ...fetchOptions, headers });
+                }
+            }
+        }
+        return response;
+    }
+
+    // Helper to fetch full details
     const fetchUserDetails = async (email) => {
         try {
-            // 1. Fetch User details
-            const userRes = await fetch(`/api/resource/User/${email}?t=${Date.now()}`, { credentials: 'include', cache: 'no-store' });
+            const userRes = await secureFetch(`/api/resource/User/${email}?t=${Date.now()}`);
             const userDoc = await userRes.json();
             const fullName = userDoc.data?.full_name || email;
 
-            // 2. Fetch Supplier details (if connected)
             try {
-                // Use custom API to get supplier based on child table linkage
-                const supplierRes = await fetch(`/api/method/supplier_portal.api.get_supplier_details`, { credentials: 'include' });
+                const supplierRes = await secureFetch(`/api/method/supplier_portal.api.get_supplier_details`);
                 const supplierData = await supplierRes.json();
 
                 let company = 'Vendor';
@@ -63,27 +129,26 @@ export const useAuthStore = defineStore('auth', () => {
             const data = await response.json()
 
             if (response.ok && data.message === 'Logged In') {
-                // 1. Verify Session immediately
-                const verifyRes = await fetch(`/api/method/supplier_portal.api.get_logged_user?t=${Date.now()}`, {
-                    credentials: 'include',
-                    headers: { 'Cache-Control': 'no-cache' }
-                });
+                // 1. Refresh CSRF Token immediately after login
+                await getCsrfToken();
+
+                // 2. Verify Session
+                const verifyRes = await secureFetch(`/api/method/supplier_portal.api.get_logged_user?t=${Date.now()}`);
                 const verifyData = await verifyRes.json();
 
                 if (!verifyData.message || verifyData.message === 'Guest') {
-                    throw new Error('Session establishment failed. Please check your browser cookie settings.');
+                    throw new Error('Session establishment failed.');
                 }
 
-                // 2. Fetch full details including Company Name
+                // 3. Fetch details
                 const fullUser = await fetchUserDetails(credentials.email);
 
                 user.value = {
-                    ...fullUser, // Includes name, email, company, supplierId
+                    ...fullUser,
                     home_page: data.home_page
                 }
                 token.value = 'frappe-session-' + Date.now()
 
-                // Store in localStorage for persistence
                 localStorage.setItem('auth_user', JSON.stringify(user.value))
                 localStorage.setItem('auth_token', token.value)
 
@@ -98,14 +163,11 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     const signup = async (userData) => {
-        // Use custom API for Vendor Registration (from original auth.js)
         try {
             const response = await fetch('/api/method/supplier_portal.api.register_vendor', {
                 method: 'POST',
                 credentials: 'include',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     company_name: userData.companyName,
                     email: userData.email,
@@ -132,34 +194,20 @@ export const useAuthStore = defineStore('auth', () => {
 
     const logout = async () => {
         try {
-            // User requested logout
-            await fetch('/api/method/logout', {
-                method: 'GET',
-                credentials: 'include'
-            })
-
-            // Verify we are Guest
-            await fetch(`/api/method/supplier_portal.api.get_logged_user?t=${Date.now()}`, {
-                credentials: 'include',
-                headers: { 'Cache-Control': 'no-cache' }
-            });
-
+            await fetch('/api/method/logout', { method: 'GET', credentials: 'include' })
+            await getCsrfToken(); // Refresh token context
         } catch (error) {
             console.error('Logout error:', error)
         } finally {
             user.value = null
             token.value = null
-
-            // Clear localStorage
+            csrfToken.value = null
             localStorage.removeItem('auth_user')
             localStorage.removeItem('auth_token')
-
-            // Force reload to clear any memory states or router guards
             window.location.href = '/login'
         }
     }
 
-    // Auto-check auth when tab becomes visible (handles cross-tab login/logout)
     if (typeof window !== 'undefined') {
         window.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
@@ -169,64 +217,41 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     const initializeAuth = async () => {
-        // 1. Always check the true server state first (with cache busting)
         try {
+            // Pre-load CSRF token safely
+            await getCsrfToken();
+
             const response = await fetch(`/api/method/supplier_portal.api.get_logged_user?t=${Date.now()}`, {
                 credentials: 'include',
                 cache: 'no-store',
-                headers: {
-                    'Accept': 'application/json',
-                    'Cache-Control': 'no-cache'
-                }
+                headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' }
             });
 
             if (response.ok) {
                 const data = await response.json();
                 const serverUser = data.message;
 
-                // Case A: Server says we are logged in (not Guest)
                 if (serverUser && serverUser !== 'Guest') {
-                    // If we don't have user data in memory, or if it doesn't match, fetch and update
                     if (!user.value || user.value.email !== serverUser) {
                         const fullUser = await fetchUserDetails(serverUser);
-                        user.value = {
-                            ...fullUser,
-                            home_page: '/app' // Default or fetch if needed
-                        }
-                        token.value = 'frappe-session-active' // Presence of token indicates auth
-
-                        // Update persistence
+                        user.value = { ...fullUser, home_page: '/app' }
+                        token.value = 'frappe-session-active'
                         localStorage.setItem('auth_user', JSON.stringify(user.value))
                         localStorage.setItem('auth_token', token.value)
                     }
-                    return; // Sync complete
+                    return;
                 }
 
-                // Case B: Server says 'Guest' -> We must be logged out
-                // If we have local state, clear it (Sync Logout)
                 if (user.value || localStorage.getItem('auth_user')) {
                     console.log("Server reports Guest, clearing local session.");
                     user.value = null
                     token.value = null
                     localStorage.removeItem('auth_user')
                     localStorage.removeItem('auth_token')
-                    // Optional: Redirect to login if currently on a protected route?
-                    // router.push('/login') // requires router access
-                }
-            } else {
-                // Response not OK (e.g. 500 error), assume logged out or keep state?
-                // Safer to do nothing or retry, but if 401/403, definitely logout.
-                if (response.status === 401 || response.status === 403) {
-                    user.value = null;
-                    token.value = null;
-                    localStorage.removeItem('auth_user');
-                    localStorage.removeItem('auth_token');
                 }
             }
-
         } catch (e) {
-            console.warn("Auth check failed, falling back to local state if offline", e);
-            // Fallback: If network error, maybe trust local storage? 
+            console.warn("Auth check failed, using local state", e);
             const storedUser = localStorage.getItem('auth_user')
             const storedToken = localStorage.getItem('auth_token')
             if (storedUser && storedToken) {
@@ -239,10 +264,13 @@ export const useAuthStore = defineStore('auth', () => {
     return {
         user,
         token,
+        csrfToken,
         isAuthenticated,
         login,
         signup,
         logout,
-        initializeAuth
+        initializeAuth,
+        secureFetch,
+        getCsrfToken
     }
 })
