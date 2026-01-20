@@ -1,13 +1,15 @@
 <script setup>
 import Navbar from './components/Navbar.vue'
-import { onMounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from './stores/auth'
 
 const authStore = useAuthStore()
+let keepAliveInterval = null
 
 onMounted(() => {
   authStore.initializeAuth()
 })
+
 </script>
 
 <template>

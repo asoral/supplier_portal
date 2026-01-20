@@ -479,7 +479,9 @@ def get_logged_user():
     """
     Returns the currently logged in user.
     """
-    return frappe.session.user or "Guest"
+    if frappe.session.user in ["Guest", None]:
+        return "Guest"
+    return frappe.session.user
 
 @frappe.whitelist(allow_guest=True)
 def get_csrf_token():

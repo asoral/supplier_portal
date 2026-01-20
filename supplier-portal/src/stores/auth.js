@@ -6,6 +6,18 @@ export const useAuthStore = defineStore('auth', () => {
     const token = ref(null)
     const csrfToken = ref(null)
 
+    // Synchronously restore from local storage if available
+    try {
+        const storedUser = localStorage.getItem('auth_user')
+        const storedToken = localStorage.getItem('auth_token')
+        if (storedUser && storedToken) {
+            user.value = JSON.parse(storedUser)
+            token.value = storedToken
+        }
+    } catch (e) {
+        console.error("Failed to restore session from local storage", e)
+    }
+
     const isAuthenticated = computed(() => !!token.value && !!user.value)
 
     const getCsrfToken = async () => {
@@ -204,16 +216,8 @@ export const useAuthStore = defineStore('auth', () => {
             csrfToken.value = null
             localStorage.removeItem('auth_user')
             localStorage.removeItem('auth_token')
-            window.location.href = '/login'
+            window.location.href = '/supplier-portal/login'
         }
-    }
-
-    if (typeof window !== 'undefined') {
-        window.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                initializeAuth()
-            }
-        })
     }
 
     const initializeAuth = async () => {
@@ -231,10 +235,11 @@ export const useAuthStore = defineStore('auth', () => {
                 const data = await response.json();
                 const serverUser = data.message;
 
+                // Case 1: Server says we are logged in
                 if (serverUser && serverUser !== 'Guest') {
                     if (!user.value || user.value.email !== serverUser) {
                         const fullUser = await fetchUserDetails(serverUser);
-                        user.value = { ...fullUser, home_page: '/app' }
+                        user.value = { ...fullUser, home_page: '/supplier-portal/dashboard' }
                         token.value = 'frappe-session-active'
                         localStorage.setItem('auth_user', JSON.stringify(user.value))
                         localStorage.setItem('auth_token', token.value)
@@ -242,24 +247,47 @@ export const useAuthStore = defineStore('auth', () => {
                     return;
                 }
 
+                // Case 2: Server explicitly says "Guest", but we think we are logged in.
                 if (user.value || localStorage.getItem('auth_user')) {
-                    console.log("Server reports Guest, clearing local session.");
+                    console.warn("Server reports Guest, performing double-check...");
+
+                    // Wait 1 second and retry just in case it's a transient glitch
+                    await new Promise(r => setTimeout(r, 1000));
+
+                    try {
+                        const retryRes = await fetch(`/api/method/supplier_portal.api.get_logged_user?t=${Date.now()}`, {
+                            credentials: 'include',
+                            cache: 'no-store'
+                        });
+                        const retryData = await retryRes.json();
+                        if (retryData.message && retryData.message !== 'Guest') {
+                            console.log("Double-check success! Session recovered.");
+                            return; // Session is actually fine
+                        }
+                    } catch (e) { }
+
+                    console.log("Server confirmed Guest after retry, clearing local session.");
                     user.value = null
                     token.value = null
                     localStorage.removeItem('auth_user')
                     localStorage.removeItem('auth_token')
+                    window.location.href = '/supplier-portal/login'
                 }
             }
         } catch (e) {
-            console.warn("Auth check failed, using local state", e);
+            // Case 3: Network error or other failure. Do NOT logout. 
+            // Assume session might still be valid.
+            console.warn("Auth check failed (network/backend), preserving local state for now.", e);
             const storedUser = localStorage.getItem('auth_user')
             const storedToken = localStorage.getItem('auth_token')
-            if (storedUser && storedToken) {
+            if (storedUser && storedToken && !user.value) {
                 user.value = JSON.parse(storedUser)
                 token.value = storedToken
             }
         }
     }
+
+
 
     return {
         user,
