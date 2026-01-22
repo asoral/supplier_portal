@@ -9,6 +9,12 @@ frappe.ui.form.on("Request for Quotation", {
         } else {
             frm.set_df_property("custom_publish_on_website", "read_only", 0);
         }
+        if (frm.doc.custom_contact_person) {
+            frm.trigger("custom_contact_person");
+        }
+        if (frm.doc.custom_contact_address) {
+            frm.trigger("custom_contact_address");
+        }
     },
     custom_publish_on_website: function (frm) {
         if (frm.doc.custom_publish_on_website == 1) {
