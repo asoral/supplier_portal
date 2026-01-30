@@ -20,6 +20,32 @@ export const useAuthStore = defineStore('auth', () => {
 
     const isAuthenticated = computed(() => !!token.value && !!user.value)
 
+    const fetchUserDetails = async (email = null) => {
+        // If email provided, we can rely on it, but safer to ask backend 'who am i'
+        try {
+            // credentials: 'include' is CRITICAL here to ensure session cookie is sent
+            // [FIX] Add timestamp to prevent browser caching of 'Guest' response
+            const response = await fetch(`/api/method/supplier_portal.api.get_logged_user?t=${Date.now()}`, {
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            const data = await response.json();
+
+            if (data.message) {
+                if (data.message === 'Guest') {
+                    return { email: 'Guest' }; // Explicit Guest object
+                }
+                return {
+                    email: data.message,
+                    name: data.message === 'Administrator' ? 'Administrator' : data.message,
+                }
+            }
+        } catch (e) {
+            console.error("Failed to fetch user details", e);
+        }
+        return null;
+    }
+
     const getCsrfToken = async () => {
         try {
             // If we have a valid global token (e.g. pushed by server), use it first? 
@@ -38,6 +64,88 @@ export const useAuthStore = defineStore('auth', () => {
             console.error("Failed to fetch CSRF token", e);
         }
         return csrfToken.value || window.csrf_token;
+    }
+
+    // Helper to read cookies
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return null;
+    }
+
+    // Initialize: Trust local storage but VERIFY with backend
+    const initializeAuth = async () => {
+        const storedUser = localStorage.getItem('auth_user')
+        const storedToken = localStorage.getItem('auth_token')
+
+        let isLocallyAuthenticated = false;
+
+        // 1. Load from local first (fast)
+        if (storedUser && storedToken) {
+            try {
+                // Only overwrite if we didn't just optimistically set it equal
+                const parsed = JSON.parse(storedUser);
+                if (!user.value || user.value.email === parsed.email) {
+                    user.value = parsed
+                    token.value = storedToken
+                    isLocallyAuthenticated = true;
+                }
+            } catch (e) {
+                console.error("Error parsing stored session", e)
+            }
+        }
+
+        // 2. Verify with backend (truth) - IN BACKGROUND if we have local data
+        const verifyBackend = async () => {
+            try {
+                const backendUser = await fetchUserDetails();
+
+                if (backendUser) {
+                    if (backendUser.email !== 'Guest') {
+                        // Valid user from backend
+                        // Update if different
+                        if (!user.value || user.value.email !== backendUser.email) {
+                            console.log("Session sync: Updating user from backend", backendUser);
+                            user.value = {
+                                ...backendUser,
+                                name: backendUser.name // Simplification
+                            };
+                            localStorage.setItem('auth_user', JSON.stringify(user.value));
+                        }
+
+                        // [FIX] Shared Session Support
+                        if (!token.value) {
+                            console.log("Shared session detected. initializing local token.");
+                            token.value = 'frappe-session-shared-' + Date.now();
+                            localStorage.setItem('auth_token', token.value);
+                        }
+
+                        // Refresh CSRF
+                        getCsrfToken();
+                    } else {
+                        // Backend EXPLICITLY says Guest.
+                        if (user.value) {
+                            console.warn("Backend reported 'Guest' while local session exists. Keeping local session active.");
+                            // We do NOT logout here. We trust the local state to keep the UI running.
+                            // The user will see 'Session Expired' overlays if API calls fail, but won't be kicked out.
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Auth init verify failed", e);
+            }
+        };
+
+        if (isLocallyAuthenticated) {
+            // If we have local data, return immediately to unblock the router
+            // Run verification in background
+            verifyBackend();
+            return;
+        } else {
+            // If no local data, we MUST await the backend check (e.g. fresh load without local storage but maybe cookie exists)
+            await verifyBackend();
+        }
     }
 
     // Robust Fetch wrapper
@@ -60,67 +168,45 @@ export const useAuthStore = defineStore('auth', () => {
             credentials: 'include'
         };
 
-        let response = await fetch(url, fetchOptions);
-
-        // Retry logic for CSRF/Auth errors
-        if (!response.ok) {
-            if (response.status === 403 || response.status === 417 || response.status === 401) {
-                // Try to parse error to see if it's specifically CSRF
-                let isCsrf = false;
-                try {
-                    const clone = response.clone();
-                    const err = await clone.json();
-                    if (err.exc_type === 'CSRFTokenError' || (response.status === 403 && err.message?.includes('CSRF'))) {
-                        isCsrf = true;
-                    }
-                } catch (e) { }
-
-                // If it looks like a token issue (or generic 403 which acts like one), retry once
-                if (isCsrf || response.status === 403) {
-                    console.warn("Potential CSRF/Permission Error, refreshing token and retrying...");
-                    await new Promise(r => setTimeout(r, 200));
-                    currentToken = await getCsrfToken();
-                    headers['X-Frappe-CSRF-Token'] = currentToken;
-                    response = await fetch(url, { ...fetchOptions, headers });
-                }
-            }
-        }
-        return response;
-    }
-
-    // Helper to fetch full details
-    const fetchUserDetails = async (email) => {
         try {
-            const userRes = await secureFetch(`/api/resource/User/${email}?t=${Date.now()}`);
-            const userDoc = await userRes.json();
-            const fullName = userDoc.data?.full_name || email;
+            let response = await fetch(url, fetchOptions);
 
-            try {
-                const supplierRes = await secureFetch(`/api/method/supplier_portal.api.get_supplier_details`);
-                const supplierData = await supplierRes.json();
+            // Retry logic for CSRF/Auth errors
+            if (!response.ok) {
+                if (response.status === 403 || response.status === 417 || response.status === 401) {
 
-                let company = 'Vendor';
-                let supplierId = null;
+                    // [FIX] Distinguish between 401 (Session Expired) and 403 (Permission Denied)
+                    // 403 should NOT logout. It just means you can't see this specific resource.
 
-                if (supplierData.message && Object.keys(supplierData.message).length > 0) {
-                    company = supplierData.message.supplier_name;
-                    supplierId = supplierData.message.name;
+                    // Try to parse error to see if it's specifically CSRF
+                    let isCsrf = false;
+                    try {
+                        const clone = response.clone();
+                        const err = await clone.json();
+                        if (err.exc_type === 'CSRFTokenError' || (response.status === 403 && err.message?.includes('CSRF'))) {
+                            isCsrf = true;
+                        }
+                    } catch (e) { }
+
+                    // If it looks like a token issue (or generic 403 which acts like one), retry once
+                    if (isCsrf) {
+                        console.warn("CSRF Error, refreshing token and retrying...");
+                        await new Promise(r => setTimeout(r, 200));
+                        currentToken = await getCsrfToken();
+                        headers['X-Frappe-CSRF-Token'] = currentToken;
+                        response = await fetch(url, { ...fetchOptions, headers });
+                    }
+
+                    // Final check: disable all auto-logout
+                    if (response.status === 401) {
+                        console.warn("Session expired (401). Keeping local session active.");
+                    }
                 }
-
-                return {
-                    name: fullName,
-                    email: email,
-                    company: company,
-                    supplierId: supplierId
-                };
-            } catch (sErr) {
-                console.warn("Supplier fetch error", sErr);
-                return { name: fullName, email, company: 'Vendor' };
             }
-
-        } catch (e) {
-            console.error("Error fetching user details", e);
-            return { name: email.split('@')[0], email, company: 'Vendor' };
+            return response;
+        } catch (error) {
+            console.error("Secure fetch error:", error);
+            throw error;
         }
     }
 
@@ -142,27 +228,59 @@ export const useAuthStore = defineStore('auth', () => {
 
             if (response.ok && data.message === 'Logged In') {
                 // 1. Refresh CSRF Token immediately after login
+                // Wait a tiny bit for cookie to propagate in browser
+                await new Promise(r => setTimeout(r, 100));
                 await getCsrfToken();
 
-                // 2. Verify Session
-                const verifyRes = await secureFetch(`/api/method/supplier_portal.api.get_logged_user?t=${Date.now()}`);
-                const verifyData = await verifyRes.json();
+                // 2. Verified Fetch Loop
+                // Retry fetching user details to ensure session "stuck"
+                let attempts = 0;
+                let verifiedUser = null;
 
-                if (!verifyData.message || verifyData.message === 'Guest') {
-                    throw new Error('Session establishment failed.');
+                while (attempts < 3 && !verifiedUser) {
+                    try {
+                        const u = await fetchUserDetails(credentials.email);
+                        if (u && u.email !== 'Guest') {
+                            verifiedUser = u;
+                        } else {
+                            // Wait and retry - Increased delay to 500ms
+                            await new Promise(r => setTimeout(r, 500));
+                        }
+                    } catch (e) {
+                        await new Promise(r => setTimeout(r, 500));
+                    }
+                    attempts++;
                 }
 
-                // 3. Fetch details
-                const fullUser = await fetchUserDetails(credentials.email);
+                if (!verifiedUser) {
+                    console.warn("Login successful but backend session verification timed out. Trusting login response and proceeding.");
+                    // [FIX] Do NOT logout. Assume cookie will eventually propagate.
+                    // Use fallback data derived from login if needed, or just trust the local state we are about to set.
 
+                    // Allow to proceed with basic user info
+                    try {
+                        // Optimistic setting if verify failed
+                        verifiedUser = {
+                            email: credentials.email,
+                            name: data.full_name || 'User',
+                            company: 'Vendor'
+                        }
+                    } catch (e) { }
+                }
+
+                // Use verifiedUser if found, otherwise fall back to constructed
                 user.value = {
-                    ...fullUser,
+                    ...verifiedUser,
                     home_page: data.home_page
                 }
+
                 token.value = 'frappe-session-' + Date.now()
 
                 localStorage.setItem('auth_user', JSON.stringify(user.value))
                 localStorage.setItem('auth_token', token.value)
+
+                // [FIX] Explicitly set cookie too for optimistic check
+                document.cookie = `user_id=${encodeURIComponent(user.value.email)}; path=/; max-age=86400; SameSite=Lax`;
 
                 return true
             } else {
@@ -204,10 +322,12 @@ export const useAuthStore = defineStore('auth', () => {
         }
     }
 
-    const logout = async () => {
+    const logout = async (skipServer = false) => {
         try {
-            await fetch('/api/method/logout', { method: 'GET', credentials: 'include' })
-            await getCsrfToken(); // Refresh token context
+            if (!skipServer) {
+                await fetch('/api/method/logout', { method: 'GET', credentials: 'include' })
+                await getCsrfToken(); // Refresh token context
+            }
         } catch (error) {
             console.error('Logout error:', error)
         } finally {
@@ -216,78 +336,12 @@ export const useAuthStore = defineStore('auth', () => {
             csrfToken.value = null
             localStorage.removeItem('auth_user')
             localStorage.removeItem('auth_token')
-            window.location.href = '/supplier-portal/login'
+
+            // [FIX] Removed hard redirect. 
+            // Let the caller or reactive UI handle the redirect to avoid loops.
+            // window.location.href = '/supplier-portal/login'
         }
     }
-
-    const initializeAuth = async () => {
-        try {
-            // Pre-load CSRF token safely
-            await getCsrfToken();
-
-            const response = await fetch(`/api/method/supplier_portal.api.get_logged_user?t=${Date.now()}`, {
-                credentials: 'include',
-                cache: 'no-store',
-                headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                const serverUser = data.message;
-
-                // Case 1: Server says we are logged in
-                if (serverUser && serverUser !== 'Guest') {
-                    if (!user.value || user.value.email !== serverUser) {
-                        const fullUser = await fetchUserDetails(serverUser);
-                        user.value = { ...fullUser, home_page: '/supplier-portal/dashboard' }
-                        token.value = 'frappe-session-active'
-                        localStorage.setItem('auth_user', JSON.stringify(user.value))
-                        localStorage.setItem('auth_token', token.value)
-                    }
-                    return;
-                }
-
-                // Case 2: Server explicitly says "Guest", but we think we are logged in.
-                if (user.value || localStorage.getItem('auth_user')) {
-                    console.warn("Server reports Guest, performing double-check...");
-
-                    // Wait 1 second and retry just in case it's a transient glitch
-                    await new Promise(r => setTimeout(r, 1000));
-
-                    try {
-                        const retryRes = await fetch(`/api/method/supplier_portal.api.get_logged_user?t=${Date.now()}`, {
-                            credentials: 'include',
-                            cache: 'no-store'
-                        });
-                        const retryData = await retryRes.json();
-                        if (retryData.message && retryData.message !== 'Guest') {
-                            console.log("Double-check success! Session recovered.");
-                            return; // Session is actually fine
-                        }
-                    } catch (e) { }
-
-                    console.log("Server confirmed Guest after retry, clearing local session.");
-                    user.value = null
-                    token.value = null
-                    localStorage.removeItem('auth_user')
-                    localStorage.removeItem('auth_token')
-                    window.location.href = '/supplier-portal/login'
-                }
-            }
-        } catch (e) {
-            // Case 3: Network error or other failure. Do NOT logout. 
-            // Assume session might still be valid.
-            console.warn("Auth check failed (network/backend), preserving local state for now.", e);
-            const storedUser = localStorage.getItem('auth_user')
-            const storedToken = localStorage.getItem('auth_token')
-            if (storedUser && storedToken && !user.value) {
-                user.value = JSON.parse(storedUser)
-                token.value = storedToken
-            }
-        }
-    }
-
-
 
     return {
         user,

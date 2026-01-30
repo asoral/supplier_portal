@@ -95,7 +95,7 @@ def get_active_tenders(limit=20, offset=0):
     offset = int(offset)
     
     # Context switch to Admin to ensure we can read all necessary headers/child tables
-    original_user = frappe.session.user
+    original_user = frappe.session.user or "Guest"
     frappe.set_user("Administrator")
     
     invited_rfq_names = []
@@ -117,7 +117,7 @@ def get_active_tenders(limit=20, offset=0):
         pass
     finally:
         frappe.set_user(original_user)
-        
+
     # 3. Construct SQL for data fetching
     # We pass the list of allowed private RFQs to the query
     
@@ -189,7 +189,7 @@ def get_tender_details(name):
 
     # Bypass standard permission checks since we have validated access via custom logic
     # This allows Guests/Suppliers to view the doc even if they don't have direct DocType read permissions
-    original_user = frappe.session.user
+    original_user = frappe.session.user or "Guest"
     frappe.set_user("Administrator")
     try:
         doc = frappe.get_doc("Request for Quotation", name)
@@ -264,7 +264,7 @@ def get_dashboard_stats():
         return {"error": "Not logged in"}
     
     # Context switch to Admin for full visibility
-    original_user = frappe.session.user
+    original_user = frappe.session.user or "Guest"
     frappe.set_user("Administrator")
     
     try:
@@ -359,7 +359,7 @@ def get_saved_tenders():
     if not user or user == "Guest":
         return []
 
-    original_user = frappe.session.user
+    original_user = frappe.session.user or "Guest"
     frappe.set_user("Administrator")
     
     try:
@@ -453,14 +453,29 @@ def delete_saved_tender(saved_id):
 def save_tender(rfq_id):
     user = frappe.session.user
     if not user or user == "Guest":
-         frappe.throw(_("Please login to save tenders"), frappe.PermissionError)
+         frappe.log_error(f"Save Tender: Unauthorized access attempt. User: {user}, SID: {frappe.session.sid}", "Supplier Portal Auth Debug")
+        return {"status": "error", "message": "Please login to save tenders", "type": "AuthError"}
 
     # Get linked supplier
     supplier_details = get_supplier_details()
-    if not supplier_details:
-         frappe.throw(_("No supplier linked to your account"), frappe.PermissionError)
-         
-    supplier = supplier_details.get("name")
+    
+    supplier = None
+    if supplier_details:
+        supplier = supplier_details.get("name")
+    
+    # Allow Administrator to test even without a link, but we need A supplier.
+    # If admin and no linked supplier, pick the first one found or error gracefully with a MESSAGE not a THROW
+    if not supplier:
+        if user == "Administrator":
+             # Try to find any supplier to attribute this to for testing
+             any_supplier = frappe.db.get_value("Supplier", {}, "name")
+             if any_supplier:
+                 supplier = any_supplier
+                 frappe.msgprint(f"Debug: Linking saved tender to first found supplier '{supplier}' for Administrator.")
+             else:
+                 return {"status": "error", "message": "No suppliers exist in system to link to."}
+        else:
+             return {"status": "error", "message": "No supplier linked to your account. Please contact support."}
     
     # Check if already saved
     exists = frappe.db.exists("Saved RFQ", {"rfq": rfq_id, "supplier": supplier})
@@ -479,6 +494,11 @@ def get_logged_user():
     """
     Returns the currently logged in user.
     """
+    # [FIX] Prevent Caching of Auth Status
+    frappe.response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    frappe.response["Pragma"] = "no-cache"
+    frappe.response["Expires"] = "0"
+
     if frappe.session.user in ["Guest", None]:
         return "Guest"
     return frappe.session.user

@@ -12,14 +12,24 @@ import {
   AlertCircle,
   Eye,
   User,
+  UserCircle,
   PieChart,
   BarChart3
 } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
+import { useRouter, useRoute } from 'vue-router'
 
+const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const activeTab = ref('Overview')
 const isLoading = ref(true)
+
+const refetchSession = async () => {
+   isLoading.value = true;
+   await authStore.logout(false);
+   router.push('/login?redirect=' + route.fullPath);
+}
 
 const dashboardData = ref({
     stats: {
@@ -35,7 +45,18 @@ const dashboardData = ref({
 
 const fetchDashboardStats = async () => {
     try {
-        const response = await fetch('/api/method/supplier_portal.api.get_dashboard_stats', { credentials: 'include' })
+        // [FIX] Use secureFetch to handle tokens properly and avoid generic fetch issues
+        // We use the store's secureFetch
+        const response = await authStore.secureFetch('/api/method/supplier_portal.api.get_dashboard_stats')
+        
+        if (!response.ok && (response.status === 403 || response.status === 401)) {
+           dashboardData.value = {
+              error: 'Session Expired',
+              isSessionExpired: true
+           }
+           throw new Error("Session Expired");
+        }
+
         const result = await response.json()
         if (result.message && !result.message.error) {
             dashboardData.value = result.message
@@ -79,18 +100,25 @@ const stats = ref([
 ])
 
 onMounted(async () => {
-    // Check login
+    // [FIX] REMOVED HARD REDIRECT
+    // If not authenticated, we just don't fetch data or show a placeholder.
+    // The shared session often takes a moment to sync, so immediate redirect is bad.
+    
+    // We can try to init auth again just in case
     if (!authStore.isAuthenticated) {
-        window.location.href = '/supplier-portal/login' // Force redirect if not logged in
-        return
+        await authStore.initializeAuth();
     }
 
-    await fetchDashboardStats()
-    if (dashboardData.value.stats) {
-        stats.value[0].value = dashboardData.value.stats.total_bids
-        stats.value[1].value = dashboardData.value.stats.orders_won
-        stats.value[2].value = dashboardData.value.stats.pending_review
-        stats.value[3].value = dashboardData.value.stats.win_rate
+    if (authStore.isAuthenticated) {
+        await fetchDashboardStats()
+        if (dashboardData.value.stats) {
+            stats.value[0].value = dashboardData.value.stats.total_bids
+            stats.value[1].value = dashboardData.value.stats.orders_won
+            stats.value[2].value = dashboardData.value.stats.pending_review
+            stats.value[3].value = dashboardData.value.stats.win_rate
+        }
+    } else {
+        isLoading.value = false; // Stop loading even if not auth
     }
 })
 
@@ -126,7 +154,20 @@ const profileCompletion = 85
   <div v-if="isLoading" class="min-h-screen bg-gray-50 flex items-center justify-center">
     <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
   </div>
-  <div v-else class="min-h-screen bg-gray-50 pb-20">
+  <div v-else class="min-h-screen bg-gray-50 pb-20 relative">
+    
+    <!-- Session Expired Overlay -->
+    <div v-if="dashboardData.isSessionExpired" class="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center text-center px-4">
+        <div class="p-4 bg-orange-50 rounded-full mb-4">
+            <UserCircle class="w-12 h-12 text-orange-500" /> 
+        </div> <!-- [NOTE] Need to import UserCircle too -->
+        <h3 class="text-xl font-bold text-gray-900">Session Timeout</h3>
+        <p class="text-gray-500 mt-2 max-w-md">For your security, your session has expired. Please reconnect to access your dashboard.</p>
+        <button @click="refetchSession" class="mt-6 px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-200">
+           Reconnect Session
+        </button>
+    </div>
+
     <!-- Header -->
     <div class="bg-white border-b border-gray-200">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">

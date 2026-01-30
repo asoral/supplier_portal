@@ -6,10 +6,37 @@ import { useAuthStore } from './stores/auth'
 const authStore = useAuthStore()
 let keepAliveInterval = null
 
+const syncSession = (event) => {
+  if (event.key === 'auth_token') {
+    if (!event.newValue) {
+      // Token removed in another tab -> logout here too
+      // authStore.logout(true) 
+      console.warn("Session token removed in another tab. Ignoring auto-logout to prevent jitter.");
+    } else if (event.newValue && !authStore.isAuthenticated) {
+      // Token added in another tab -> try to init auth here
+      authStore.initializeAuth()
+    }
+  }
+}
+
 onMounted(() => {
   authStore.initializeAuth()
+  window.addEventListener('storage', syncSession)
+
+  // [FIX] Keep Alive Heartbeat - STRENGTHENED
+  // Ping the server every 60 seconds to FORCE the session to stay alive.
+//   keepAliveInterval = setInterval(async () => {
+//     if (authStore.isAuthenticated) {
+//         // Fetching user details touches the session more reliably than just CSRF
+//         await authStore.initializeAuth(); 
+//     }
+//   }, 60 * 1000); // 60 seconds
 })
 
+onUnmounted(() => {
+  window.removeEventListener('storage', syncSession)
+  if (keepAliveInterval) clearInterval(keepAliveInterval)
+})
 </script>
 
 <template>

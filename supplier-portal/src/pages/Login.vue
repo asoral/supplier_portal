@@ -41,13 +41,12 @@ const handleLogin = async (e) => {
      
      // Force hard navigation to ensure session cookies are fully respected by the browser/server
      // for any subsequent requests (including Desk /app).
+     // [FIX] Use Client-Side Routing (SPA) to prevent cookie race conditions.
+     // Forces the user to stay in the Portal context.
      if (redirect && !redirect.includes('desk') && !redirect.includes('app')) {
-        window.location.href = redirect
-     } else if (authStore.user?.home_page && authStore.user.home_page !== '/index') {
-         // Respect server-provided home page (e.g. /app or /supplier-portal)
-         window.location.href = authStore.user.home_page
+        router.push(redirect)
      } else {
-        window.location.href = '/supplier-portal/dashboard'
+        router.push('/dashboard')
      }
   } catch (error) {
      console.error("Login failed", error)
