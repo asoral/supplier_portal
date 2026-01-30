@@ -3,8 +3,10 @@ import { ref, computed, onMounted } from 'vue'
 import { MessageSquare, Clock, CheckCircle, FileQuestion, Plus, Search, FileText, X, Send } from 'lucide-vue-next'
 import { createToast } from 'mosha-vue-toastify'
 import 'mosha-vue-toastify/dist/style.css'
+import { useAuthStore } from '../stores/auth' // [FIX] Import store
 
 // --- State Management ---
+const authStore = useAuthStore() // [FIX] Initialize store
 const activeTab = ref('My Queries')
 const tabs = ['My Queries', 'Questionnaires']
 const searchQuery = ref('')
@@ -27,12 +29,10 @@ const questionnaireTypes = ['Compliance Assessment', 'Technical Assessment']
 const fetchQueries = async () => {
   isLoading.value = true
   try {
-    const headers = { 'X-Requested-With': 'XMLHttpRequest' };
-    
-    // Fetch both in parallel
+    // Fetch both in parallel using the store's secureFetch
     const [queriesRes, questRes] = await Promise.all([
-        fetch('/api/method/supplier_portal.api.get_my_queries', { credentials: 'include', headers }),
-        fetch('/api/method/supplier_portal.api.get_my_questionnaires', { credentials: 'include', headers })
+        authStore.secureFetch('/api/method/supplier_portal.api.get_my_queries'),
+        authStore.secureFetch('/api/method/supplier_portal.api.get_my_questionnaires')
     ]);
 
     const queriesData = await queriesRes.json();
@@ -79,12 +79,13 @@ const fetchQueries = async () => {
 // 2. Fetch valid Tenders dynamically
 const fetchTenders = async () => {
   try {
-    const response = await fetch('/api/resource/Request for Quotation?' + new URLSearchParams({
+    const response = await authStore.secureFetch('/api/resource/Request for Quotation?' + new URLSearchParams({
       fields: JSON.stringify(["name"]),
-      limit_page_length: 50
-    }), { credentials: 'include' })
+      limit_page_length: "50"
+    }))
     
     const result = await response.json()
+    // Standard Frappe API response for resource listing is { data: [...] }
     tendersList.value = (result.data || []).map(t => t.name)
   } catch (error) {
     console.error("Failed to fetch tenders:", error)
@@ -96,73 +97,8 @@ const fetchTenders = async () => {
 // Submit new query to Frappe
 const isSubmitting = ref(false)
 
-const getLatestCsrfToken = async () => {
-    try {
-        const response = await fetch('/api/method/supplier_portal.api.get_csrf_token', { 
-            credentials: 'include',
-            cache: 'no-store'
-        });
-        const data = await response.json();
-        
-        if (data.message) {
-            window.csrf_token = data.message;
-            return data.message;
-        }
-    } catch (e) {
-        console.error("Failed to refresh CSRF token", e);
-    }
-    return window.csrf_token;
-}
-
-const secureFetch = async (url, options = {}) => {
-    let token = window.csrf_token;
-    if (!token || token === "None") {
-        token = await getLatestCsrfToken();
-    }
-    
-    // Merge headers carefully
-    const headers = {
-        'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-        'X-Frappe-CSRF-Token': token,
-        ...(options.headers || {})
-    };
-
-    // Ensure credentials are included
-    const fetchOptions = {
-        ...options,
-        headers,
-        credentials: 'include'
-    };
-
-    let response = await fetch(url, fetchOptions);
-    
-    if (!response.ok) {
-         try {
-             // We clone to check error type
-             const clone = response.clone();
-             const err = await clone.json();
-             
-             if (err.exc_type === 'CSRFTokenError' || response.status === 403 || response.status === 417 || response.status === 400) {
-                 console.warn("CSRF Error, retrying...", err.exc_type);
-                 
-                 // Wait a moment and force get new token
-                 await new Promise(r => setTimeout(r, 500));
-                 token = await getLatestCsrfToken();
-                 
-                 // Update header with new token
-                 headers['X-Frappe-CSRF-Token'] = token;
-                 
-                 // Retry with new headers
-                 response = await fetch(url, {
-                     ...fetchOptions,
-                     headers
-                 });
-             }
-         } catch(e) { }
-    }
-    return response;
-}
+// [FIX] Removed redundant local getLatestCsrfToken and secureFetch
+// We now use authStore.secureFetch everywhere consistent logic.
 
 const submitQuery = async () => {
   if (!newQuery.value.subject || !newQuery.value.description || !newQuery.value.tender) {
@@ -172,14 +108,13 @@ const submitQuery = async () => {
 
   isSubmitting.value = true
   try {
-    const response = await secureFetch('/api/method/supplier_portal.api.create_rfq_query', {
+    const response = await authStore.secureFetch('/api/method/supplier_portal.api.create_rfq_query', {
       method: 'POST',
       body: JSON.stringify({
         subject: newQuery.value.subject,
         rfq: newQuery.value.tender, 
         query: newQuery.value.description
-      }),
-      credentials: 'include'
+      })
     });
 
     if (response.ok) {
@@ -215,14 +150,13 @@ const submitRequest = async () => {
 
     isSubmittingRequest.value = true
     try {
-        const response = await secureFetch('/api/method/supplier_portal.api.create_rfq_questionnaire', {
+        const response = await authStore.secureFetch('/api/method/supplier_portal.api.create_rfq_questionnaire', {
             method: 'POST',
             body: JSON.stringify({
                 rfq: newRequest.value.tender,
                 subject: newRequest.value.type,
                 query: newRequest.value.reason
-            }),
-            credentials: 'include'
+            })
         });
 
         if (response.ok) {

@@ -14,6 +14,15 @@ const router = useRouter()
 const isLoading = ref(true)
 const isSaved = ref(false)
 const savedTendersList = ref([])
+const isSessionExpired = ref(false)
+
+const refetchSession = async () => {
+   // Try to bounce the session
+   isLoading.value = true;
+   isSessionExpired.value = false;
+   await authStore.logout(false); // Clean logout
+   router.push('/login?redirect=' + route.fullPath);
+}
 
 // --- ADDED: Logic to check database on page load ---
 const authStore = useAuthStore()
@@ -86,15 +95,23 @@ const handleSave = async () => {
     const result = await response.json()
 
     if (response.ok) {
+        const msg = result.message;
+        
+        // Handle explicit error returned as JSON (e.g. from Guest save attempt)
+        if (msg && msg.status === 'error') {
+             createToast(msg.message || 'Error saving tender', { type: 'danger' })
+             return
+        }
+
         // Handle "Already saved" or "Success"
-        if (result.message && (result.message.status === 'success' || result.message.status === 'skipped')) {
+        if (msg && (msg.status === 'success' || msg.status === 'skipped')) {
              isSaved.value = true
-             if (result.message.name) {
-                 tender.value.saved_record_name = result.message.name
+             if (msg.name) {
+                 tender.value.saved_record_name = msg.name
              } else {
                  await checkSavedStatus() 
              }
-             createToast(result.message.message || 'Tender saved successfully', { type: 'success' })
+             createToast(msg.message || 'Tender saved successfully', { type: 'success' })
         } else {
              // Fallback for unexpected success structure
              createToast('Tender saved', { type: 'success' })
@@ -117,10 +134,18 @@ const tender = ref(null)
 const fetchTenderDetails = async () => {
   isLoading.value = true
   try {
-    const response = await fetch('/api/method/supplier_portal.api.get_tender_details?' + new URLSearchParams({
+    const response = await authStore.secureFetch('/api/method/supplier_portal.api.get_tender_details?' + new URLSearchParams({
         name: route.params.id
-    }), { credentials: 'include' })
+    }))
     
+    // AuthStore secureFetch returns a response object
+    // Check if response was 403/401 and handle gracefully
+    if (!response.ok && (response.status === 403 || response.status === 401)) {
+       console.warn("Permission denied for tender. Likely session expired.");
+       isSessionExpired.value = true;
+       throw new Error("Session Expired");
+    }
+
     const result = await response.json()
     const data = result.message
 
@@ -215,6 +240,15 @@ onMounted(async () => {
             <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
             <p class="text-gray-500 text-sm font-medium">Loading tender details...</p>
         </div>
+    </div>
+
+    <div v-else-if="isSessionExpired" class="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+        <UserCircle class="w-12 h-12 text-orange-500 mb-4" />
+        <h3 class="text-lg font-bold text-gray-900">Session Expired</h3>
+        <p class="text-gray-500 mt-2 max-w-md">Your secure session has timed out properly. Please save your work (if any) and reconnect.</p>
+        <button @click="refetchSession" class="mt-6 px-6 py-2.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition shadow-sm">
+           Reconnect Session
+        </button>
     </div>
 
     <div v-else-if="!tender" class="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">

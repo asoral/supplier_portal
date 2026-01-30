@@ -37,10 +37,10 @@ const routes = [
     component: () => import('../pages/Dashboard.vue')
   },
   {
-  path: '/saved-tenders', 
-  name: 'SavedTenders',
-  component: () => import('../pages/SavedTenders.vue')
-},
+    path: '/saved-tenders',
+    name: 'SavedTenders',
+    component: () => import('../pages/SavedTenders.vue')
+  },
   {
     path: '/invoices',
     name: 'Invoices',
@@ -85,6 +85,28 @@ const routes = [
 const router = createRouter({
   history: createWebHistory('/supplier-portal'),
   routes
+})
+
+// [FIX] Strict Auth Guard
+// Prevent access to protected routes if not authenticated
+router.beforeEach(async (to, from, next) => {
+  const publicPages = ['/login', '/register', '/help', '/'];
+  const authRequired = !publicPages.includes(to.path);
+  const { useAuthStore } = await import('../stores/auth');
+  const authStore = useAuthStore();
+
+  // If page requires auth and user is not logged in
+  if (authRequired && !authStore.isAuthenticated) {
+    // Try to initialize first (in case of page reload)
+    await authStore.initializeAuth();
+
+    if (!authStore.isAuthenticated) {
+      // Still not authenticated? Redirect to login
+      return next('/login');
+    }
+  }
+
+  next();
 })
 
 export default router

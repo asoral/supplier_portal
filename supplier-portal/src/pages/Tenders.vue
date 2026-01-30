@@ -1,11 +1,24 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Search, Filter, LayoutGrid, List, X, Bell, Bookmark } from 'lucide-vue-next'
-import { useRoute } from 'vue-router'
+import { Search, Filter, LayoutGrid, List, X, Bell, Bookmark, UserCircle } from 'lucide-vue-next'
+import { useRoute, useRouter } from 'vue-router'
 import TenderCard from '../components/TenderCard.vue'
+import { useAuthStore } from '../stores/auth'
+
+const authStore = useAuthStore()
 
 const route = useRoute()
+const router = useRouter()
+const isSessionExpired = ref(false)
 const searchQuery = ref('')
+
+const refetchSession = async () => {
+   // Try to bounce the session
+   isLoading.value = true;
+   isSessionExpired.value = false;
+   await authStore.logout(false); // Clean logout
+   router.push('/login?redirect=' + route.fullPath);
+}
 const viewMode = ref('grid') 
 const priceRange = ref(5000000)
 const sortBy = ref('Deadline (Soonest)')
@@ -23,9 +36,16 @@ const fetchTenders = async () => {
   isLoading.value = true
   try {
     // Use custom API to fetch tenders with correct server-side filtering
-    const response = await fetch('/api/method/supplier_portal.api.get_active_tenders?' + new URLSearchParams({
+    // [FIX] Use secureFetch to ensure cookies/session are sent
+    const response = await authStore.secureFetch('/api/method/supplier_portal.api.get_active_tenders?' + new URLSearchParams({
        limit: 20
      }))
+
+    // Check for session expiry
+    if (!response.ok && (response.status === 403 || response.status === 401)) {
+        isSessionExpired.value = true;
+        throw new Error("Session Expired");
+    }
 
     const result = await response.json()
     const data = result.message || []
@@ -313,7 +333,16 @@ const clearFilters = () => {
          </div>
 
          <div :class="viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6' : 'flex flex-col gap-4'">
-            <div v-if="filteredTenders.length === 0" class="col-span-full py-20 text-center bg-white rounded-lg border border-gray-200 border-dashed">
+            <div v-if="isSessionExpired" class="col-span-full py-20 text-center bg-white rounded-lg border border-gray-200">
+               <UserCircle class="mx-auto h-12 w-12 text-orange-500 mb-4" />
+               <h3 class="text-lg font-bold text-gray-900">Session Expired</h3>
+               <p class="mt-1 text-sm text-gray-500 mb-6 max-w-md mx-auto">Your session has timed out. Please reconnect to continue viewing active tenders.</p>
+               <button @click="refetchSession" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                  Reconnect Session
+               </button>
+            </div>
+
+            <div v-else-if="filteredTenders.length === 0" class="col-span-full py-20 text-center bg-white rounded-lg border border-gray-200 border-dashed">
                <div class="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-gray-100 mb-4">
                   <Search class="h-6 w-6 text-gray-400" />
                </div>

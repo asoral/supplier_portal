@@ -1,18 +1,10 @@
-It looks like the blank page in your Saved Tenders view is likely caused by a JavaScript error in the template or script that is preventing the component from rendering. Because we added logic to handle the saved_id and specific data mapping, if the API returns data in a slightly different format than expected, the whole page can crash.
-
-Let's fix the SavedTenders.vue file to be more "bulletproof" so it handles empty data or different naming conventions without breaking the UI.
-
-The Corrected SavedTenders.vue
-Replace your entire script and the top part of your template with this version. I have added extra safety checks (Optional Chaining ?.) to ensure that even if one tender has missing data, the rest of the page still loads.
-
-Code snippet
-
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Bookmark, Clock, Bell, ArrowRight, Eye, Trash2 } from 'lucide-vue-next'
 import { createToast } from 'mosha-vue-toastify'
 import 'mosha-vue-toastify/dist/style.css'
+import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
 const tenders = ref([])
@@ -37,71 +29,15 @@ const updateStats = () => {
   stats.value[3].value = "0" 
 }
 
-const getLatestCsrfToken = async () => {
-    try {
-        const response = await fetch('/api/method/supplier_portal.api.get_csrf_token', { 
-            credentials: 'include',
-            cache: 'no-store'
-        });
-        const data = await response.json();
-        
-        if (data.message) {
-            window.csrf_token = data.message;
-            return data.message;
-        }
-    } catch (e) {
-        console.error("Failed to refresh CSRF token", e);
-    }
-    return window.csrf_token;
-}
+const authStore = useAuthStore()
+const { secureFetch } = authStore
 
-const secureFetch = async (url, options = {}) => {
-    let token = window.csrf_token;
-    if (!token || token === "None") {
-        token = await getLatestCsrfToken();
-    }
-    
-    // Merge headers carefully
-    const headers = {
-        'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-        'X-Frappe-CSRF-Token': token,
-        ...(options.headers || {})
-    };
-
-    // Ensure credentials are included
-    const fetchOptions = {
-        ...options,
-        headers,
-        credentials: 'include'
-    };
-
-    let response = await fetch(url, fetchOptions);
-    
-    if (!response.ok) {
-         try {
-             const clone = response.clone();
-             const err = await clone.json();
-             if (err.exc_type === 'CSRFTokenError' || response.status === 403 || response.status === 417 || response.status === 400) {
-                 await new Promise(r => setTimeout(r, 500));
-                 token = await getLatestCsrfToken();
-                 headers['X-Frappe-CSRF-Token'] = token;
-                 response = await fetch(url, { ...fetchOptions, headers });
-             }
-         } catch(e) { }
-    }
-    return response;
-}
 
 const fetchSavedTenders = async () => {
     isLoading.value = true;
     try {
-        const response = await fetch('/api/method/supplier_portal.api.get_saved_tenders', {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Frappe-CSRF-Token': window.csrf_token || '',
-            }
+        const response = await secureFetch('/api/method/supplier_portal.api.get_saved_tenders', {
+            method: 'GET'
         });
         
         const result = await response.json();
