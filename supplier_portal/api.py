@@ -453,7 +453,7 @@ def delete_saved_tender(saved_id):
 def save_tender(rfq_id):
     user = frappe.session.user
     if not user or user == "Guest":
-         frappe.log_error(f"Save Tender: Unauthorized access attempt. User: {user}, SID: {frappe.session.sid}", "Supplier Portal Auth Debug")
+        frappe.log_error(f"Save Tender: Unauthorized access attempt. User: {user}, SID: {frappe.session.sid}", "Supplier Portal Auth Debug")
         return {"status": "error", "message": "Please login to save tenders", "type": "AuthError"}
 
     # Get linked supplier
@@ -485,7 +485,7 @@ def save_tender(rfq_id):
     doc = frappe.new_doc("Saved RFQ")
     doc.rfq = rfq_id
     doc.supplier = supplier
-    doc.save(ignore_permissions=True)
+    doc.insert(ignore_permissions=True)
     
     return {"status": "success", "message": "Tender saved", "name": doc.name}
 
@@ -670,11 +670,11 @@ def add_to_catalog(item_id):
     if not supplier:
         frappe.throw("Supplier not found for this user.")
 
-    doc = frappe.get_doc("Item", item_id)
-    doc.append("supplier_items", {
-        "supplier": supplier
-    })
-    doc.save(ignore_permissions=True)
+        doc = frappe.get_doc("Item", item_id)
+        doc.append("supplier_items", {
+            "supplier": supplier
+        })
+        doc.save(ignore_permissions=True)
     
     return "success"
 
