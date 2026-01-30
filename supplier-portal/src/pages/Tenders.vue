@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Search, Filter, LayoutGrid, List, X, Bell, Bookmark, UserCircle } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import TenderCard from '../components/TenderCard.vue'
@@ -35,8 +35,10 @@ const isLoading = ref(true)
 const fetchTenders = async () => {
   isLoading.value = true
   try {
-    // Use custom API to fetch tenders with correct server-side filtering
-    // [FIX] Use secureFetch to ensure cookies/session are sent
+    const params = new URLSearchParams({ 
+      limit: 20,
+      priority: selectedPriority.value // This sends 'Urgent', 'High', etc.
+    })
     const response = await authStore.secureFetch('/api/method/supplier_portal.api.get_active_tenders?' + new URLSearchParams({
        limit: 20
      }))
@@ -59,6 +61,7 @@ const fetchTenders = async () => {
       budget: rfq.custom_total_budget_,               
       deadline: rfq.custom_bid_submission_last_date,             
       publishedDate: rfq.custom_publish_date,
+      priority: rfq.custom_priority,
       // Check for live bidding enablement
       liveBidding: rfq.custom_bid_status === 'Active' && rfq.custom_enable_live_bidding
     }))
@@ -144,7 +147,7 @@ const clearFilters = () => {
    selectedPriority.value = 'All'
    liveBiddingOnly.value = false
    searchQuery.value = ''
-   priceRange.value = 5000000
+   priceRange.value = 20000000
    sortBy.value = 'Deadline (Soonest)'
 }
 </script>
@@ -172,7 +175,7 @@ const clearFilters = () => {
       <div class="hidden lg:block space-y-6">
          <div class="flex items-center justify-between">
             <h3 class="font-semibold text-gray-900 flex items-center gap-2"><Filter class="h-4 w-4" /> Filters</h3>
-            <button @click="clearFilters" class="text-xs font-medium text-indigo-600 hover:text-indigo-500">Clear All</button>
+            <button @click.prevent="clearFilters" class="text-xs font-medium text-indigo-600 hover:text-indigo-500">Clear All</button>
          </div>
 
          <!-- Category Filter -->

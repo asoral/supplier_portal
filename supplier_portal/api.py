@@ -92,44 +92,50 @@ def get_supplier_details():
     return {}
 
 @frappe.whitelist(allow_guest=True)
-def get_active_tenders(limit=20, offset=0):
+def get_active_tenders(limit=20, offset=0, priority=None):
     user = frappe.session.user
     limit = int(limit)
     offset = int(offset)
-    
-    # Removed set_user("Administrator") to prevent session issues
     
     invited_rfq_names = []
     
     try:
         if user and user != "Guest":
-            # 1. Broadly find all Suppliers this user is linked to
-            # Added ignore_permissions=True
-            suppliers = [s.parent for s in frappe.get_all("Portal User", filters={"user": user, "parenttype": "Supplier"}, fields=["parent"], ignore_permissions=True)]
+            # 1. Broadly find all Suppliers linked to this user
+            suppliers = [s.parent for s in frappe.get_all("Portal User", 
+                filters={"user": user, "parenttype": "Supplier"}, 
+                fields=["parent"], ignore_permissions=True)]
             
             if suppliers:
-                # 2. Find all RFQs inviting these suppliers
-                # Added ignore_permissions=True
+                # 2. Find RFQs inviting these suppliers
                 invited_rfq_names = [r.parent for r in frappe.get_all("Request for Quotation Supplier", 
-                                                                    filters={"supplier": ["in", suppliers]}, 
-                                                                    fields=["parent"], 
-                                                                    ignore_permissions=True)]
+                    filters={"supplier": ["in", suppliers]}, 
+                    fields=["parent"], ignore_permissions=True)]
     except Exception as e:
         frappe.log_error(f"Active Tenders Permission Error: {str(e)}")
-        # Continue to at least show public tenders
         pass
 
-    # 3. Construct SQL for data fetching
-    # We pass the list of allowed private RFQs to the query
-    
-    # Handle the 'IN' clause safely
+    # --- START OF QUERY VALUE CONSTRUCTION ---
+    # The order here MUST match the order of %s in the SQL string
+    query_values = []
+
+    # 1. Private Condition Placeholders
     if invited_rfq_names:
         in_placeholder = ', '.join(['%s'] * len(invited_rfq_names))
         private_condition = f"OR name IN ({in_placeholder})"
-        query_values = invited_rfq_names + [limit, offset]
+        query_values.extend(invited_rfq_names) # Add names to list
     else:
-        private_condition = "OR 1=0" # False condition if no invites
-        query_values = [limit, offset]
+        private_condition = "OR 1=0"
+
+    # 2. Priority Condition Placeholder
+    priority_sql = ""
+    if priority and priority != "All":
+        priority_sql = "AND custom_priority = %s"
+        query_values.append(priority) # Add priority to list after RFQ names
+
+    # 3. Limit and Offset Placeholders
+    query_values.extend([limit, offset]) # Add these last
+    # --- END OF QUERY VALUE CONSTRUCTION ---
 
     sql = f"""
         SELECT 
@@ -144,6 +150,7 @@ def get_active_tenders(limit=20, offset=0):
             custom_enable_live_bidding, 
             transaction_date, 
             status,
+            custom_priority,
             custom_publish_on_website
         FROM `tabRequest for Quotation`
         WHERE docstatus < 2
@@ -151,6 +158,7 @@ def get_active_tenders(limit=20, offset=0):
             custom_publish_on_website = 1
             {private_condition}
         )
+        {priority_sql}
         ORDER BY modified DESC
         LIMIT %s OFFSET %s
     """
@@ -669,11 +677,11 @@ def add_to_catalog(item_id):
     if not supplier:
         frappe.throw("Supplier not found for this user.")
 
-    doc = frappe.get_doc("Item", item_id)
-    doc.append("supplier_items", {
-        "supplier": supplier
-    })
-    doc.save(ignore_permissions=True)
+        doc = frappe.get_doc("Item", item_id)
+        doc.append("supplier_items", {
+            "supplier": supplier
+        })
+        doc.save(ignore_permissions=True)
     
     return "success"
 
