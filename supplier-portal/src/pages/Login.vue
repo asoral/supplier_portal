@@ -81,21 +81,7 @@ const fillDemo = () => {
           <h2 class="text-2xl font-bold text-gray-900">Welcome Back</h2>
           <p class="mt-2 text-sm text-gray-500">Sign in to your vendor account to manage bids</p>
        </div>
-
-       <!-- Demo Alert -->
-       <div class="mb-6 rounded-lg bg-indigo-50 p-4 border border-indigo-100">
-          <div class="flex">
-             <div class="flex-shrink-0">
-                <Info class="h-5 w-5 text-indigo-400" aria-hidden="true" />
-             </div>
-             <div class="ml-3">
-                <h3 class="text-sm font-medium text-indigo-800">Demo Mode</h3>
-                <div class="mt-2 text-sm text-indigo-700">
-                   <p>Use the pre-filled credentials or click below to auto-fill demo login. <button @click="fillDemo" class="font-bold underline cursor-pointer hover:text-indigo-900">Fill Demo Credentials</button></p>
-                </div>
-             </div>
-          </div>
-       </div>
+       
 
        <form @submit="handleLogin" class="space-y-5">
           <div>

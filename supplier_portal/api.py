@@ -783,14 +783,12 @@ def get_dashboard_stats():
         "supplier": supplier,
         "docstatus": 1
     })
-    print("-------------------po count",orders_won)
 
     pending_review = frappe.db.count("Supplier Quotation", {
         "supplier": supplier,
         "docstatus": 1,
         "status": "Submitted",
     })
-    print("------------------supplier quo",pending_review)
 
     sq = frappe.qb.DocType("Supplier Quotation")
     total_bid_value = (
@@ -799,7 +797,6 @@ def get_dashboard_stats():
         .where(sq.supplier == supplier)
         .where(sq.docstatus == 1)
     ).run()[0][0] or 0
-    print("-------------------total bid value",total_bid_value)
 
     po = frappe.qb.DocType("Purchase Order")
     orders_won_value = (
@@ -808,7 +805,6 @@ def get_dashboard_stats():
         .where(po.supplier == supplier)
         .where(po.docstatus == 1)
     ).run()[0][0] or 0
-    print("-------------------orders_won_value",orders_won_value)
 
     win_rate = "0%"
     if total_bids > 0:
@@ -831,6 +827,26 @@ def get_dashboard_stats():
         ORDER BY sq.creation DESC
         LIMIT 5
     """, (supplier,), as_dict=True)
+
+    upcoming_rfqs = frappe.get_all("Request for Quotation",
+        filters={
+            "docstatus": 0,
+            "status": ["!=", "Closed"],
+            "custom_bid_submission_last_date": [">=", frappe.utils.nowdate()]
+        },
+        fields=["name", "custom_rfq_subject", "custom_bid_submission_last_date"],
+        order_by="custom_bid_submission_last_date asc",
+        limit=5
+    )
+
+    formatted_deadlines = []
+    for rfq in upcoming_rfqs:
+        formatted_deadlines.append({
+            "id": rfq.name,
+            "subject": rfq.custom_rfq_subject or rfq.name,
+            "deadline": frappe.utils.formatdate(rfq.custom_bid_submission_last_date, "dd MMM yyyy"),
+            "days_left": frappe.utils.date_diff(rfq.custom_bid_submission_last_date, frappe.utils.nowdate())
+        })
 
     status_colors = {
         "Submitted": "bg-green-100 text-green-700 ring-green-600/20",
@@ -880,5 +896,6 @@ def get_dashboard_stats():
             "orders_won_value": f"{float(orders_won_value):,.2f}"
         },
         "recent_bids": recent_bids,
-        "recent_activity": recent_activity
+        "recent_activity": recent_activity,
+        "upcoming_deadlines": formatted_deadlines,
     }
