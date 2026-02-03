@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.query_builder.functions import Sum
 
 @frappe.whitelist(allow_guest=True)
 def register_vendor(company_name, email, contact_person, phone, gst=None, password=None):
@@ -750,3 +751,134 @@ def update_supplier_item(**args):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Update Catalog Error")
         return f"error: {str(e)}"
+    
+@frappe.whitelist(allow_guest=False)
+def get_dashboard_stats():
+    if frappe.session.user == "Guest":
+        frappe.throw(_("Please log in to access the portal"), frappe.PermissionError)
+
+    user = frappe.session.user
+    
+    supplier = frappe.db.get_value("Portal User", 
+        {"user": user, "parenttype": "Supplier"}, "parent")
+    print("-------------------supplier",supplier)
+    
+    if not supplier:
+        supplier = frappe.db.get_value("Contact", 
+            {"email_id": user}, "supplier")
+
+    if not supplier:
+        return {
+            "error": True,
+            "message": _("No Supplier linked to this user. Please check Portal User settings.")
+        }
+
+    total_bids = frappe.db.count("Supplier Quotation", {
+        "supplier": supplier,
+        "docstatus": 1
+    })
+    print("----------------total_bids",total_bids)
+
+    orders_won = frappe.db.count("Purchase Order", {
+        "supplier": supplier,
+        "docstatus": 1
+    })
+    print("-------------------po count",orders_won)
+
+    pending_review = frappe.db.count("Supplier Quotation", {
+        "supplier": supplier,
+        "docstatus": 1,
+        "status": "Submitted",
+    })
+    print("------------------supplier quo",pending_review)
+
+    sq = frappe.qb.DocType("Supplier Quotation")
+    total_bid_value = (
+        frappe.qb.from_(sq)
+        .select(Sum(sq.total))
+        .where(sq.supplier == supplier)
+        .where(sq.docstatus == 1)
+    ).run()[0][0] or 0
+    print("-------------------total bid value",total_bid_value)
+
+    po = frappe.qb.DocType("Purchase Order")
+    orders_won_value = (
+        frappe.qb.from_(po)
+        .select(Sum(po.total))
+        .where(po.supplier == supplier)
+        .where(po.docstatus == 1)
+    ).run()[0][0] or 0
+    print("-------------------orders_won_value",orders_won_value)
+
+    win_rate = "0%"
+    if total_bids > 0:
+        rate = (orders_won / total_bids) * 100
+        win_rate = f"{int(rate)}%"
+
+    recent_bids = frappe.db.sql("""
+       SELECT 
+            sq.name, 
+            sq.transaction_date, 
+            sq.grand_total, 
+            sq.status,
+            (SELECT rfq.subject 
+             FROM `tabSupplier Quotation Item` sqi
+             JOIN `tabRequest for Quotation` rfq ON sqi.request_for_quotation = rfq.name
+             WHERE sqi.parent = sq.name 
+             LIMIT 1) as rfq_subject
+        FROM `tabSupplier Quotation` sq
+        WHERE sq.supplier = %s
+        ORDER BY sq.creation DESC
+        LIMIT 5
+    """, (supplier,), as_dict=True)
+
+    status_colors = {
+        "Submitted": "bg-green-100 text-green-700 ring-green-600/20",
+        "Draft": "bg-blue-100 text-blue-700 ring-blue-600/20",
+        "Cancelled": "bg-red-100 text-red-700 ring-red-600/20",
+        "Stopped": "bg-yellow-100 text-yellow-700 ring-yellow-600/20",
+        "Expired": "bg-red-100 text-red-700 ring-red-600/20",
+        "Under Review": "bg-gray-100 text-gray-600 ring-gray-500/10"
+    }
+
+    formatted_bids = [] 
+    for d in recent_bids: 
+        title = d.rfq_subject or d.name
+        
+        amount_val = d.grand_total or 0
+            
+        formatted_bids.append({
+            "id": d.name,
+            "title": title,
+            "date": frappe.utils.formatdate(d.transaction_date, "dd MMM yyyy"),
+            "amount": f"₹{amount_val:,.2f}",
+            "status": d.status,
+            "statusColor": status_colors.get(d.status, "bg-gray-100 text-gray-600 ring-gray-500/10"),
+            "rank": "#1" if d.status == "Won" else "" 
+        })
+    recent_bids = formatted_bids
+
+    recent_activity = frappe.get_all("Activity Log",
+        filters={"user": user},
+        fields=["subject as title", "creation as time", "operation as icon_type"],
+        order_by="creation desc",
+        limit=5
+    )
+
+    for act in recent_activity:
+        act['time'] = frappe.utils.pretty_date(act['time'])
+
+    return {
+        "user_name": frappe.get_value("User", user, "first_name") or user,
+        "supplier_name": supplier,
+        "stats": {
+            "total_bids": total_bids,
+            "orders_won": orders_won,
+            "pending_review": pending_review,
+            "win_rate": f"{int((orders_won / total_bids) * 100)}%" if total_bids > 0 else "0%",
+            "total_bid_value": f"{float(total_bid_value or 0):,.2f}",
+            "orders_won_value": f"{float(orders_won_value):,.2f}"
+        },
+        "recent_bids": recent_bids,
+        "recent_activity": recent_activity
+    }
