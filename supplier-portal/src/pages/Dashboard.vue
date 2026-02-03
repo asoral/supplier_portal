@@ -1,20 +1,8 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { 
-  Trophy, 
-  FileText, 
-  Clock, 
-  TrendingUp,
-  Receipt,
-  MoreHorizontal,
-  Download,
-  CheckCircle,
-  AlertCircle,
-  Eye,
-  User,
-  UserCircle,
-  PieChart,
-  BarChart3
+  Trophy, FileText, Clock, LogIn, LogOut, Edit, PlusCircle, TrendingUp, 
+  CheckCircle, User, UserCircle, Download, Eye, PieChart, BarChart3 
 } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useRouter, useRoute } from 'vue-router'
@@ -25,129 +13,95 @@ const authStore = useAuthStore()
 const activeTab = ref('Overview')
 const isLoading = ref(true)
 
-const refetchSession = async () => {
-   isLoading.value = true;
-   await authStore.logout(false);
-   router.push('/login?redirect=' + route.fullPath);
-}
-
 const dashboardData = ref({
     stats: {
         total_bids: 0,
         orders_won: 0,
         pending_review: 0,
-        win_rate: '0%'
+        win_rate: '0%',
+        total_bid_value: "0.00",
+        orders_won_value: "0.00",
     },
     recent_bids: [],
+    recent_activity: [], 
     supplier_name: '',
-    user_name: ''
+    user_name: '',
+    isSessionExpired: false
 })
+
+const stats = ref([
+  { name: 'Total Bids', value: '0', icon: FileText },
+  { name: 'Orders Won', value: '0', icon: Trophy },
+  { name: 'Pending Review', value: '0', icon: Clock },
+  { name: 'Win Rate', value: '0%', icon: TrendingUp },
+])
 
 const fetchDashboardStats = async () => {
     try {
-        // [FIX] Use secureFetch to handle tokens properly and avoid generic fetch issues
-        // We use the store's secureFetch
         const response = await authStore.secureFetch('/api/method/supplier_portal.api.get_dashboard_stats')
         
         if (!response.ok && (response.status === 403 || response.status === 401)) {
-           dashboardData.value = {
-              error: 'Session Expired',
-              isSessionExpired: true
-           }
-           throw new Error("Session Expired");
+           dashboardData.value.isSessionExpired = true
+           return;
         }
 
         const result = await response.json()
-        if (result.message && !result.message.error) {
-            dashboardData.value = result.message
+        if (result.message) {
+            dashboardData.value = result.message 
+            
+            const s = result.message.stats;
+            stats.value[0].value = s.total_bids
+            stats.value[1].value = s.orders_won
+            stats.value[0].value = `₹${s.total_bid_value}`;
+            stats.value[1].value = `₹${s.orders_won_value}`;
+            stats.value[2].value = s.pending_review
+            stats.value[3].value = s.win_rate
         }
     } catch (e) {
-        console.error("Failed to fetch dashboard stats", e)
+        console.error("Dashboard Sync Error:", e)
     } finally {
         isLoading.value = false
     }
 }
 
-const stats = ref([
-  { 
-    name: 'Total Bids', 
-    value: '0', 
-    icon: FileText, 
-    change: '-', 
-    changeType: 'increase' 
-  },
-  { 
-    name: 'Orders Won', 
-    value: '0', 
-    icon: Trophy, 
-    change: '-', 
-    changeType: 'increase' 
-  },
-  { 
-    name: 'Pending Review', 
-    value: '0', 
-    icon: Clock, 
-    change: '-', 
-    changeType: 'decrease' 
-  },
-  { 
-    name: 'Win Rate', 
-    value: '0%', 
-    icon: TrendingUp, 
-    change: '-', 
-    changeType: 'increase' 
-  },
-])
-
-onMounted(async () => {
-    // [FIX] REMOVED HARD REDIRECT
-    // If not authenticated, we just don't fetch data or show a placeholder.
-    // The shared session often takes a moment to sync, so immediate redirect is bad.
-    
-    // We can try to init auth again just in case
-    if (!authStore.isAuthenticated) {
-        await authStore.initializeAuth();
+const getActivityStyle = (operation) => {
+    const map = {
+        'Login': { icon: LogIn, color: 'bg-blue-50 text-blue-600' },
+        'Logout': { icon: LogOut, color: 'bg-gray-100 text-gray-600' },
+        'Update': { icon: Edit, color: 'bg-amber-50 text-amber-600' },
+        'Post': { icon: PlusCircle, color: 'bg-green-50 text-green-600' },
+        'Submit': { icon: CheckCircle, color: 'bg-indigo-50 text-indigo-600' }
     }
+    return map[operation] || { icon: Clock, color: 'bg-gray-50 text-gray-600' }
+}
 
-    if (authStore.isAuthenticated) {
-        await fetchDashboardStats()
-        if (dashboardData.value.stats) {
-            stats.value[0].value = dashboardData.value.stats.total_bids
-            stats.value[1].value = dashboardData.value.stats.orders_won
-            stats.value[2].value = dashboardData.value.stats.pending_review
-            stats.value[3].value = dashboardData.value.stats.win_rate
-        }
-    } else {
-        isLoading.value = false; // Stop loading even if not auth
-    }
+const processedActivities = computed(() => {
+    return (dashboardData.value.recent_activity || []).map(act => ({
+        title: act.title,
+        time: act.time, 
+        ...getActivityStyle(act.icon_type) 
+    }))
 })
 
+onMounted(async () => {
+    isLoading.value = true;
+    try {
+        if (!authStore.isAuthenticated) {
+            await authStore.initializeAuth();
+        }
+        
+        if (!authStore.isAuthenticated) {
+            window.location.href = "/app"; 
+            return;
+        }
 
-const activities = [
-  {
-    title: 'Submitted bid for Steel Plates',
-    time: '2 hours ago',
-    icon: FileText,
-    iconColor: 'bg-blue-100 text-blue-600'
-  }
-]
-
-// Mock data for charts/complex analytics as they require more complex backend aggregation
-const performanceCategories = [
-  { name: 'Raw Materials', won: 2, total: 5, percentage: 40, color: 'bg-purple-600' },
-  { name: 'Machinery', won: 1, total: 3, percentage: 33, color: 'bg-indigo-600' },
-  { name: 'Consumables', won: 2, total: 4, percentage: 50, color: 'bg-blue-600' },
-  { name: 'Electrical', won: 1, total: 2, percentage: 50, color: 'bg-violet-600' }
-]
-
-const monthlyPerformance = [
-  { month: 'Jan', count: 2, growth: '+10%' },
-  { month: 'Feb', count: 3, growth: '+15%' },
-  { month: 'Mar', count: 4, growth: '+20%' },
-  { month: 'Apr', count: 5, growth: '+25%' }
-]
-
-const profileCompletion = 85
+        await fetchDashboardStats();
+    } catch (error) {
+        console.error("Mounting Error:", error);
+    } finally {
+        isLoading.value = false;
+    }
+});
 </script>
 
 <template>
@@ -254,7 +208,7 @@ const profileCompletion = 85
                     </div>
                     <div>
                        <p class="text-sm font-medium text-gray-500">Total Bid Value</p>
-                       <p class="text-xl font-bold text-gray-900">₹0</p>
+                       <p class="text-xl font-bold text-gray-900">₹{{ dashboardData.stats.total_bid_value }}</p>
                     </div>
                  </div>
               </div>
@@ -265,50 +219,63 @@ const profileCompletion = 85
                     </div>
                     <div>
                         <p class="text-sm font-medium text-gray-500">Orders Won Value</p>
-                        <p class="text-xl font-bold text-gray-900">₹0</p>
+                        <p class="text-xl font-bold text-gray-900">₹{{ dashboardData.stats.orders_won_value }}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">Pending Review</p>
+                        <p class="text-xl font-bold text-gray-900">₹{{ dashboardData.stats.pending_review }}</p>
                     </div>
                  </div>
               </div>
            </div>
 
            <!-- Recent Bids -->
-           <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5">
-              <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-                 <div class="flex items-center gap-2">
-                    <FileText class="h-5 w-5 text-indigo-600" />
-                    <h3 class="font-semibold text-gray-900">Recent Bids</h3>
-                 </div>
-                 <a href="#" @click.prevent="activeTab = 'My Bids'" class="text-sm font-semibold text-indigo-600 hover:text-indigo-500 flex items-center">
-                    View All <span aria-hidden="true" class="ml-1">→</span>
-                 </a>
-              </div>
-              <div v-if="dashboardData.recent_bids.length === 0" class="p-6 text-center text-gray-500">
-                  No recent bids found.
-              </div>
-              <ul v-else role="list" class="divide-y divide-gray-100">
-                 <li v-for="bid in dashboardData.recent_bids" :key="bid.id" class="px-6 py-4 hover:bg-gray-50 transition-colors">
-                    <div class="flex items-center justify-between gap-x-6">
-                       <div class="min-w-0">
-                          <div class="flex items-start gap-x-3">
-                             <p class="text-sm font-semibold leading-6 text-gray-900">{{ bid.title }}</p>
-                          </div>
-                          <div class="mt-1 flex items-center gap-x-2 text-xs leading-5 text-gray-500">
-                             <p>{{ bid.amount }}</p>
-                             <svg viewBox="0 0 2 2" class="h-0.5 w-0.5 fill-current"><circle cx="1" cy="1" r="1" /></svg>
-                             <p>{{ bid.date }}</p>
-                          </div>
-                       </div>
-                       <div class="flex flex-none items-center gap-x-4">
-                          <span :class="[bid.statusColor, 'inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ring-gray-500/10']">
-                             {{ bid.status }}
-                          </span>
-                       </div>
-                    </div>
-                 </li>
-              </ul>
-           </div>
+         <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5 overflow-hidden">
+  <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+    <div class="flex items-center gap-2">
+      <FileText class="h-5 w-5 text-indigo-600" />
+      <h3 class="font-semibold text-gray-900">Recent Bids</h3>
+    </div>
+    <a href="#" @click.prevent="activeTab = 'My Bids'" class="text-sm font-semibold text-indigo-600 hover:text-indigo-500 flex items-center">
+      View All <span aria-hidden="true" class="ml-1">→</span>
+    </a>
+  </div>
+
+  <div class="p-4">
+    <div v-if="dashboardData.recent_bids.length === 0" class="py-10 text-center text-gray-500">
+      No recent bids found.
+    </div>
+
+    <ul v-else role="list" class="space-y-3">
+      <li v-for="bid in dashboardData.recent_bids" :key="bid.id" 
+          class="group relative flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:border-indigo-100 hover:bg-indigo-50/30 transition-all duration-200">
+        
+        <div class="min-w-0">
+          <div class="flex items-center gap-x-3">
+            <p class="text-sm font-bold leading-6 text-gray-900 group-hover:text-indigo-700">
+              {{ bid.title }}
+            </p>
+          </div>
+          <div class="mt-1 flex items-center gap-x-2 text-xs leading-5 text-gray-500">
+            <p class="font-medium text-gray-700">{{ bid.amount }}</p>
+            <svg viewBox="0 0 2 2" class="h-0.5 w-0.5 fill-gray-300"><circle cx="1" cy="1" r="1" /></svg>
+            <p>{{ bid.date }}</p>
+          </div>
         </div>
 
+        <div class="flex flex-none items-center gap-x-4">
+          <span :class="[
+            bid.statusColor, 
+            'inline-flex items-center rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset'
+          ]">
+            {{ bid.status }}
+          </span>
+        </div>
+      </li>
+    </ul>
+  </div>
+</div>
+</div>
         <!-- Right Column -->
         <div class="space-y-8">
            <!-- Profile Strength -->
@@ -332,30 +299,48 @@ const profileCompletion = 85
            </div>
 
            <!-- Recent Activity -->
-           <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5">
-              <div class="p-4 border-b border-gray-100">
-                 <h3 class="font-semibold text-gray-900 flex items-center gap-2">
-                    <TrendingUp class="h-4 w-4 text-gray-400" />
-                    Recent Activity
-                 </h3>
-              </div>
-              <div class="p-4">
-                 <ul role="list" class="space-y-6">
-                    <li v-for="(activity, activityIdx) in activities" :key="activityIdx" class="relative flex gap-x-4">
-                       <div class="absolute left-0 top-0 flex w-6 justify-center -bottom-6" v-if="activityIdx !== activities.length - 1">
-                          <div class="w-px bg-gray-200" />
-                       </div>
-                       <div :class="[activity.iconColor, 'relative flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-gray-50']">
-                          <component :is="activity.icon" class="h-4 w-4" aria-hidden="true" />
-                       </div>
-                       <div class="flex-auto py-0.5">
-                          <p class="text-sm font-medium text-gray-900 leading-snug">{{ activity.title }}</p>
-                          <p class="text-xs text-gray-500 mt-1">{{ activity.time }}</p>
-                       </div>
-                    </li>
-                 </ul>
-              </div>
-           </div>
+         <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5">
+        <div class="p-4 border-b border-gray-100">
+            <h3 class="font-semibold text-gray-900 flex items-center gap-2">
+                <TrendingUp class="h-4 w-4 text-gray-400" />
+                Recent Activity
+            </h3>
+        </div>
+        <div class="p-4">
+            <div v-if="!processedActivities.length" class="py-6 text-center text-sm text-gray-400">
+                No recent activity found.
+            </div>
+
+            <ul v-else role="list" class="space-y-6">
+                <li v-for="(activity, activityIdx) in processedActivities" 
+                    :key="activityIdx" 
+                    class="relative flex gap-x-4">
+                    
+                    <div 
+                        v-if="activityIdx !== processedActivities.length - 1"
+                        class="absolute left-0 top-0 flex w-8 justify-center -bottom-6" 
+                        aria-hidden="true"
+                    >
+                        <div class="w-px bg-gray-200" />
+                    </div>
+
+                    <div :class="[
+                        activity.color, 
+                        'relative flex h-8 w-8 flex-none items-center justify-center rounded-lg'
+                    ]">
+                        <component :is="activity.icon" class="h-4 w-4" aria-hidden="true" />
+                    </div>
+
+                    <div class="flex-auto py-0.5">
+                        <p class="text-sm font-medium text-gray-900 leading-snug" v-html="activity.title"></p>
+                        <p class="text-xs text-gray-500 mt-1">
+                            {{ activity.time }}
+                        </p>
+                    </div>
+                </li>
+            </ul>
+        </div>
+    </div>
         </div>
       </div>
 

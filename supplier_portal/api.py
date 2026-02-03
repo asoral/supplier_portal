@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.query_builder.functions import Sum
 
 @frappe.whitelist(allow_guest=True)
 def register_vendor(company_name, email, contact_person, phone, gst=None, password=None):
@@ -92,44 +93,50 @@ def get_supplier_details():
     return {}
 
 @frappe.whitelist(allow_guest=True)
-def get_active_tenders(limit=20, offset=0):
+def get_active_tenders(limit=20, offset=0, priority=None):
     user = frappe.session.user
     limit = int(limit)
     offset = int(offset)
-    
-    # Removed set_user("Administrator") to prevent session issues
     
     invited_rfq_names = []
     
     try:
         if user and user != "Guest":
-            # 1. Broadly find all Suppliers this user is linked to
-            # Added ignore_permissions=True
-            suppliers = [s.parent for s in frappe.get_all("Portal User", filters={"user": user, "parenttype": "Supplier"}, fields=["parent"], ignore_permissions=True)]
+            # 1. Broadly find all Suppliers linked to this user
+            suppliers = [s.parent for s in frappe.get_all("Portal User", 
+                filters={"user": user, "parenttype": "Supplier"}, 
+                fields=["parent"], ignore_permissions=True)]
             
             if suppliers:
-                # 2. Find all RFQs inviting these suppliers
-                # Added ignore_permissions=True
+                # 2. Find RFQs inviting these suppliers
                 invited_rfq_names = [r.parent for r in frappe.get_all("Request for Quotation Supplier", 
-                                                                    filters={"supplier": ["in", suppliers]}, 
-                                                                    fields=["parent"], 
-                                                                    ignore_permissions=True)]
+                    filters={"supplier": ["in", suppliers]}, 
+                    fields=["parent"], ignore_permissions=True)]
     except Exception as e:
         frappe.log_error(f"Active Tenders Permission Error: {str(e)}")
-        # Continue to at least show public tenders
         pass
 
-    # 3. Construct SQL for data fetching
-    # We pass the list of allowed private RFQs to the query
-    
-    # Handle the 'IN' clause safely
+    # --- START OF QUERY VALUE CONSTRUCTION ---
+    # The order here MUST match the order of %s in the SQL string
+    query_values = []
+
+    # 1. Private Condition Placeholders
     if invited_rfq_names:
         in_placeholder = ', '.join(['%s'] * len(invited_rfq_names))
         private_condition = f"OR name IN ({in_placeholder})"
-        query_values = invited_rfq_names + [limit, offset]
+        query_values.extend(invited_rfq_names) # Add names to list
     else:
-        private_condition = "OR 1=0" # False condition if no invites
-        query_values = [limit, offset]
+        private_condition = "OR 1=0"
+
+    # 2. Priority Condition Placeholder
+    priority_sql = ""
+    if priority and priority != "All":
+        priority_sql = "AND custom_priority = %s"
+        query_values.append(priority) # Add priority to list after RFQ names
+
+    # 3. Limit and Offset Placeholders
+    query_values.extend([limit, offset]) # Add these last
+    # --- END OF QUERY VALUE CONSTRUCTION ---
 
     sql = f"""
         SELECT 
@@ -144,6 +151,7 @@ def get_active_tenders(limit=20, offset=0):
             custom_enable_live_bidding, 
             transaction_date, 
             status,
+            custom_priority,
             custom_publish_on_website
         FROM `tabRequest for Quotation`
         WHERE docstatus < 2
@@ -151,6 +159,7 @@ def get_active_tenders(limit=20, offset=0):
             custom_publish_on_website = 1
             {private_condition}
         )
+        {priority_sql}
         ORDER BY modified DESC
         LIMIT %s OFFSET %s
     """
@@ -669,11 +678,11 @@ def add_to_catalog(item_id):
     if not supplier:
         frappe.throw("Supplier not found for this user.")
 
-    doc = frappe.get_doc("Item", item_id)
-    doc.append("supplier_items", {
-        "supplier": supplier
-    })
-    doc.save(ignore_permissions=True)
+        doc = frappe.get_doc("Item", item_id)
+        doc.append("supplier_items", {
+            "supplier": supplier
+        })
+        doc.save(ignore_permissions=True)
     
     return "success"
 
@@ -742,3 +751,134 @@ def update_supplier_item(**args):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Update Catalog Error")
         return f"error: {str(e)}"
+    
+@frappe.whitelist(allow_guest=False)
+def get_dashboard_stats():
+    if frappe.session.user == "Guest":
+        frappe.throw(_("Please log in to access the portal"), frappe.PermissionError)
+
+    user = frappe.session.user
+    
+    supplier = frappe.db.get_value("Portal User", 
+        {"user": user, "parenttype": "Supplier"}, "parent")
+    print("-------------------supplier",supplier)
+    
+    if not supplier:
+        supplier = frappe.db.get_value("Contact", 
+            {"email_id": user}, "supplier")
+
+    if not supplier:
+        return {
+            "error": True,
+            "message": _("No Supplier linked to this user. Please check Portal User settings.")
+        }
+
+    total_bids = frappe.db.count("Supplier Quotation", {
+        "supplier": supplier,
+        "docstatus": 1
+    })
+    print("----------------total_bids",total_bids)
+
+    orders_won = frappe.db.count("Purchase Order", {
+        "supplier": supplier,
+        "docstatus": 1
+    })
+    print("-------------------po count",orders_won)
+
+    pending_review = frappe.db.count("Supplier Quotation", {
+        "supplier": supplier,
+        "docstatus": 1,
+        "status": "Submitted",
+    })
+    print("------------------supplier quo",pending_review)
+
+    sq = frappe.qb.DocType("Supplier Quotation")
+    total_bid_value = (
+        frappe.qb.from_(sq)
+        .select(Sum(sq.total))
+        .where(sq.supplier == supplier)
+        .where(sq.docstatus == 1)
+    ).run()[0][0] or 0
+    print("-------------------total bid value",total_bid_value)
+
+    po = frappe.qb.DocType("Purchase Order")
+    orders_won_value = (
+        frappe.qb.from_(po)
+        .select(Sum(po.total))
+        .where(po.supplier == supplier)
+        .where(po.docstatus == 1)
+    ).run()[0][0] or 0
+    print("-------------------orders_won_value",orders_won_value)
+
+    win_rate = "0%"
+    if total_bids > 0:
+        rate = (orders_won / total_bids) * 100
+        win_rate = f"{int(rate)}%"
+
+    recent_bids = frappe.db.sql("""
+       SELECT 
+            sq.name, 
+            sq.transaction_date, 
+            sq.grand_total, 
+            sq.status,
+            (SELECT rfq.subject 
+             FROM `tabSupplier Quotation Item` sqi
+             JOIN `tabRequest for Quotation` rfq ON sqi.request_for_quotation = rfq.name
+             WHERE sqi.parent = sq.name 
+             LIMIT 1) as rfq_subject
+        FROM `tabSupplier Quotation` sq
+        WHERE sq.supplier = %s
+        ORDER BY sq.creation DESC
+        LIMIT 5
+    """, (supplier,), as_dict=True)
+
+    status_colors = {
+        "Submitted": "bg-green-100 text-green-700 ring-green-600/20",
+        "Draft": "bg-blue-100 text-blue-700 ring-blue-600/20",
+        "Cancelled": "bg-red-100 text-red-700 ring-red-600/20",
+        "Stopped": "bg-yellow-100 text-yellow-700 ring-yellow-600/20",
+        "Expired": "bg-red-100 text-red-700 ring-red-600/20",
+        "Under Review": "bg-gray-100 text-gray-600 ring-gray-500/10"
+    }
+
+    formatted_bids = [] 
+    for d in recent_bids: 
+        title = d.rfq_subject or d.name
+        
+        amount_val = d.grand_total or 0
+            
+        formatted_bids.append({
+            "id": d.name,
+            "title": title,
+            "date": frappe.utils.formatdate(d.transaction_date, "dd MMM yyyy"),
+            "amount": f"₹{amount_val:,.2f}",
+            "status": d.status,
+            "statusColor": status_colors.get(d.status, "bg-gray-100 text-gray-600 ring-gray-500/10"),
+            "rank": "#1" if d.status == "Won" else "" 
+        })
+    recent_bids = formatted_bids
+
+    recent_activity = frappe.get_all("Activity Log",
+        filters={"user": user},
+        fields=["subject as title", "creation as time", "operation as icon_type"],
+        order_by="creation desc",
+        limit=5
+    )
+
+    for act in recent_activity:
+        act['time'] = frappe.utils.pretty_date(act['time'])
+
+    return {
+        "user_name": frappe.get_value("User", user, "first_name") or user,
+        "supplier_name": supplier,
+        "stats": {
+            "total_bids": total_bids,
+            "orders_won": orders_won,
+            "pending_review": pending_review,
+            "win_rate": f"{int((orders_won / total_bids) * 100)}%" if total_bids > 0 else "0%",
+            "total_bid_value": f"{float(total_bid_value or 0):,.2f}",
+            "orders_won_value": f"{float(orders_won_value):,.2f}"
+        },
+        "recent_bids": recent_bids,
+        "recent_activity": recent_activity
+    }
