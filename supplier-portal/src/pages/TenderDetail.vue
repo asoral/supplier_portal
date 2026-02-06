@@ -50,6 +50,33 @@ const checkSavedStatus = async () => {
   }
 }
 
+const handleShare = async () => {
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: selectedContract.value?.title || 'TenderFlow Document',
+        text: `Check out this tender: ${selectedContract.value?.id}`,
+        url: window.location.href, // Shares the current browser URL
+      });
+      console.log('Successfully shared');
+    } catch (error) {
+      console.error('Error sharing:', error);
+    }
+  } else {
+    // Fallback: Copy link to clipboard if Share API is not supported (e.g., non-secure origins or old browsers)
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      alert('Link copied to clipboard!');
+    } catch (err) {
+      console.error('Failed to copy link:', err);
+    }
+  }
+};
+
+const handlePrint = () => {
+  window.print();
+};
+
 const handleSave = async () => {
   if (!tender.value) return 
 
@@ -162,7 +189,8 @@ const fetchTenderDetails = async () => {
       status: data.status,
       liveBidding: data.status === 'Active' && data.enable_live_bidding,
       description: data.description ,
-      quantity: data.total_quantity ,
+      UOM:data.uom,
+      quantity: data.total_quantity?.toLocaleString('en-IN') || 0,      
       bidsReceived: data.bidsReceived || 0,
       estBudget: data.total_budget ,
       deadline: data.submission_date ,
@@ -289,7 +317,6 @@ onMounted(async () => {
           <span class="flex items-center gap-1"><BadgeCheck class="w-3.5 h-3.5" /> {{ tender.id }}</span>
           <span class="flex items-center gap-1"><Calendar class="w-3.5 h-3.5" /> Published: {{ tender.publishedDate }}</span>
           <span class="flex items-center gap-1"><MapPin class="w-3.5 h-3.5" /> {{ tender.location }}</span>
-          <span class="flex items-center gap-1"><UserCircle class="w-3.5 h-3.5" /> {{ tender.views || 0 }} views</span>
         </div>
       </div>
       
@@ -309,11 +336,11 @@ onMounted(async () => {
           <span class="text-sm font-semibold">{{ isSaved ? 'Saved' : 'Save' }}</span>
         </button>
 
-        <button class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 border border-gray-200 transition-colors">
+        <button @click="handleShare" class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 border border-gray-200 transition-colors">
           <Share2 class="w-4 h-4" />
         </button>
 
-        <button class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 border border-gray-200 transition-colors">
+        <button @click="handlePrint" class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 border border-gray-200 transition-colors">
           <Printer class="w-4 h-4" />
         </button>
       </div>
@@ -381,9 +408,9 @@ onMounted(async () => {
                       <Hourglass class="w-5 h-5" />
                       </div>
                       <div>
-                      <div class="text-xs text-orange-600 font-medium mb-0.5">Auto Extension</div>
+                      <div class="text-xs text-orange-600 font-medium mb-0.5"> Bid Submission Last Date</div>
                       <div class="text-sm font-bold text-gray-900">
-                         {{ tender.autoExtension || '0 mins' }}
+                         {{ tender.deadline || '0 mins' }}
                       </div>
                       </div>
                    </div>
@@ -530,54 +557,68 @@ onMounted(async () => {
              
           <!-- Summary Card -->
              <div class="bg-white rounded-xl border border-gray-200 px-6 py-6 shadow-sm relative overflow-hidden">
-                <h3 class="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">Tender Summary</h3>
-                
-                <div class="grid grid-cols-2 gap-y-4 gap-x-2 text-sm mb-6">
-                   <div>
-                      <div class="text-xs text-gray-500 mb-0.5">Quantity</div>
-                      <div class="font-semibold text-gray-900">{{ tender.quantity }}</div>
-                   </div>
-                    <div>
-                      <div class="text-xs text-gray-500 mb-0.5">Bids Received</div>
-                      <div class="font-semibold text-gray-900">{{ tender.bidsReceived }}</div>
-                   </div>
-                    <div>
-                      <div class="text-xs text-gray-500 mb-0.5">Est. Budget</div>
-                      <div class="font-semibold text-gray-900">{{ formattedBudget }}</div>
-                   </div>
-                    <div>
-                      <div class="text-xs text-gray-500 mb-0.5">Delivery Date</div>
-                      <div class="font-semibold text-gray-900">{{ tender.deliveryDate }}</div>
-                   </div>
-                </div>
- 
-                <div class="pt-4 border-t border-gray-100 mb-6">
-                   <div class="flex items-center gap-2 text-xs text-red-600 mb-1 font-medium">
-                      <Clock class="w-3.5 h-3.5" /> Deadline
-                   </div>
-                   <div class="text-sm font-bold text-gray-900 mb-1">{{ tender.deadline }}</div>
-                    <div class="text-xs text-gray-500">Department: {{ tender.department }}</div>
-                </div>
- 
-                <button class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-lg shadow-sm transition-colors mb-3 flex items-center justify-center gap-2">
-                  <BadgeCheck class="w-4 h-4" /> Submit Your Bid
-               </button>
+    <h3 class="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">Tender Summary</h3>
+    
+    <div class="grid grid-cols-2 gap-y-4 gap-x-2 text-sm mb-6">
+       <div>
+      <div class="flex items-center gap-1.5 text-xs text-gray-500 mb-0.5">
+         <FileText class="w-3.5 h-3.5" /> Quantity
+      </div>
+      <div class="font-bold text-gray-900">{{ tender.quantity }} {{ tender.UOM }}</div>
+   </div>
 
-               <div class="flex items-center gap-2">
-                  <a :href="mainBoqUrl || '#'" target="_blank" 
-                     class="flex-grow bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 text-sm font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer no-underline">
-                     <Download class="w-4 h-4 text-gray-500" /> Download BOQ
-                  </a>
+   <div>
+      <div class="flex items-center gap-1.5 text-xs text-gray-500 mb-0.5">
+         <UserCircle class="w-3.5 h-3.5" /> Bids Received
+      </div>
+      <div class="font-bold text-gray-900">{{ tender.bidsReceived }}</div>
+   </div>
 
-                  <button 
-                  @click="goToQueries"
-                  class="p-2.5 bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
-                  title="View Queries"
-               >
-                  <MessageSquare class="w-5 h-5" />
-               </button>
-               </div>
-            </div>
+   <div>
+      <div class="flex items-center gap-1.5 text-xs text-gray-500 mb-0.5">
+         <Banknote class="w-3.5 h-3.5" /> Est. Budget
+      </div>
+      <div class="font-bold text-gray-900">{{ formattedBudget }}</div>
+   </div>
+        <div>
+          <div class="flex items-center gap-1.5 text-xs text-gray-500 mb-0.5">
+             <Calendar class="w-3.5 h-3.5" /> Delivery Date
+          </div>
+          <div class="font-bold text-gray-900">{{ tender.deliveryDate }}</div>
+       </div>
+    </div>
+
+    <div class="pt-4 border-t border-gray-100 mb-6 space-y-3">
+       <div class="flex justify-between items-center">
+          <div class="flex items-center gap-2 text-sm text-gray-500">
+             <Clock class="w-4 h-4" /> Deadline
+          </div>
+          <div class="text-sm font-bold text-gray-900">{{ tender.deadline }}</div>
+       </div>
+       
+       <div class="flex justify-between items-center">
+          <div class="flex items-center gap-2 text-sm text-gray-500">
+             <Building2 class="w-4 h-4" /> Department
+          </div>
+          <div class="text-sm font-bold text-gray-900">{{ tender.department }}</div>
+       </div>
+    </div>
+
+    <button class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-lg shadow-sm transition-colors mb-3 flex items-center justify-center gap-2">
+      <Zap class="w-4 h-4" /> Submit Your Bid
+   </button>
+
+   <div class="flex items-center gap-2">
+      <a :href="mainBoqUrl || '#'" target="_blank" 
+         class="flex-grow bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 text-sm font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer no-underline">
+         <Download class="w-4 h-4 text-gray-500" /> Download BOQ
+      </a>
+
+      <button @click="goToQueries" class="p-2.5 bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors shadow-sm">
+         <MessageSquare class="w-5 h-5" />
+      </button>
+   </div>
+</div>
             
             
              <!-- Live Bidding Card -->

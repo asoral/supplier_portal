@@ -263,6 +263,7 @@ def get_tender_details(name):
         "billing_address": doc.get("billing_address_display") or doc.get("custom_address_display"),
         "terms": doc.terms,
         "items": items,
+        "uom": items[0]["uom"] if items else "",
         "documents": attachments,
         "enable_live_bidding": doc.get("custom_enable_live_bidding"),
         # Timelines
