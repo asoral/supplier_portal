@@ -88,6 +88,12 @@ doc_events = {
     },
     "Supplier Quotation": {
         "validate": "supplier_portal.supplier_portal.custom_supplier_quotation.validate_bid_decrement"
+    },
+    "Blanket Order" :{
+        "on_update":"supplier_portal.custom_blanket_order.update_delivery_percent"
+    },
+     "Payment Entry": {
+        "on_submit": "supplier_portal.custom_blanket_order.update_total_ordered_qty"
     }
 }
 
