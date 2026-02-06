@@ -899,3 +899,104 @@ def get_dashboard_stats():
         "recent_activity": recent_activity,
         "upcoming_deadlines": formatted_deadlines,
     }
+
+
+@frappe.whitelist()
+def get_logged_user_supplier(allow_guest=False):
+    if frappe.session.user == "Guest":
+        frappe.throw(_("Please log in to access the portal"), frappe.PermissionError)
+
+    user = frappe.session.user
+ 
+    supplier = frappe.db.get_value("Portal User", {"user": user}, "parent")
+
+    if not supplier:
+        supplier = frappe.db.get_value("Supplier", {"portal_user": user}, "name")
+        
+    if not supplier:
+        contact = frappe.db.get_value("Contact", {"email_id": user}, "name")
+        if contact:
+            supplier = frappe.db.get_value("Dynamic Link", 
+                {"link_doctype": "Supplier", "parent": contact}, "link_name")
+
+    return supplier
+
+@frappe.whitelist()
+def get_blanket_order_payment_stats(blanket_order):
+    user_supplier = frappe.db.get_value("Portal User", {"user": frappe.session.user}, "parent")
+    
+    bo_supplier = frappe.db.get_value("Blanket Order", blanket_order, "supplier")
+    
+    if user_supplier != bo_supplier:
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+    pos = frappe.get_all("Purchase Order", 
+        filters={"blanket_order": blanket_order, "docstatus": 1}, 
+        pluck="name"
+    )
+
+    if not pos:
+        return {"total_paid": 0}
+
+    payment_stats = frappe.db.sql("""
+        SELECT SUM(per.allocated_amount) 
+        FROM `tabPayment Entry Reference` per
+        INNER JOIN `tabPayment Entry` pe ON pe.name = per.parent
+        WHERE per.reference_doctype = 'Purchase Order' 
+        AND per.reference_name IN %(po_list)s
+        AND pe.docstatus = 1
+    """, {"po_list": pos})
+
+    total_paid = payment_stats[0][0] or 0
+
+    return {
+        "total_paid": total_paid
+    }
+
+
+@frappe.whitelist()
+def get_contract_payments(blanket_order):
+    frappe.logger().info(f"Fetching payments for Blanket Order: {blanket_order}")
+    
+    return frappe.db.sql("""
+        SELECT DISTINCT
+            pe.name as id, 
+            pe.posting_date as date, 
+            pe.paid_amount as amount, 
+            pe.docstatus as docstatus
+        FROM `tabPayment Entry` pe
+        INNER JOIN `tabPayment Entry Reference` per ON pe.name = per.parent
+        INNER JOIN `tabPurchase Order Item` poi ON per.reference_name = poi.parent
+        WHERE poi.blanket_order = %s
+          AND per.reference_doctype = 'Purchase Order'
+    """, (blanket_order,), as_dict=True)
+
+@frappe.whitelist()
+def get_contract_documents(blanket_order):
+    bo_doc = frappe.get_doc("Blanket Order", blanket_order)
+    all_documents = []
+
+    source_field = bo_doc.get('custom_documents')
+
+    if source_field:
+        for link in source_field:
+            
+            folder_id = link.get('document_name') 
+            
+            print(f"--- Found Folder ID: {folder_id}")
+
+            if folder_id:
+                try:
+                    folder_doc = frappe.get_doc("Contract Document", folder_id)
+                    
+                    all_documents.append({
+                        "id": folder_doc.name,
+                        "document_name": folder_doc.document_name, 
+                        "file_url": folder_doc.document,           
+                        "date": folder_doc.creation.strftime('%Y-%m-%d') if folder_doc.creation else ""
+                    })
+                except frappe.DoesNotExistError:
+                    print(f"--- Error: Contract Document {folder_id} not found")
+                    continue
+    
+    return all_documents
