@@ -1001,3 +1001,22 @@ def get_contract_documents(blanket_order):
                     continue
     
     return all_documents
+
+   
+@frappe.whitelist()
+def get_similar_tenders(category, exclude_id):
+    print("---------------working----------")
+    return frappe.db.get_list('Request for Quotation', 
+        filters={
+            'custom_rfq_category': category, 
+            'name': ['!=', exclude_id],
+            'docstatus': 1
+        },
+        fields=[
+            'name as id', 
+            'custom_rfq_subject as title', 
+            'custom_total_budget_ as budget', 
+            'custom_bid_submission_last_date as deadline'
+        ],
+        limit=5
+    )

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed , watch} from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { 
   ArrowLeft, BadgeCheck, Clock, Download, Share2, Printer, 
@@ -76,6 +76,47 @@ const handleShare = async () => {
 const handlePrint = () => {
   window.print();
 };
+
+const similarTenders = ref([])
+
+const fetchSimilarTenders = async (category, currentId) => {
+  try {
+    const url = '/api/method/supplier_portal.api.get_similar_tenders?' + new URLSearchParams({
+        category: category,
+        exclude_id: currentId
+    });
+    
+    const response = await secureFetch(url);
+    const result = await response.json();
+    
+    if (result.message) {
+      similarTenders.value = result.message.map(t => ({
+        id: t.id,
+        title: t.title, 
+        budget: parseFloat(t.budget) || 0,
+        deadline: t.deadline ? new Date(t.deadline).toLocaleDateString('en-IN', { 
+            day: '2-digit', 
+            month: 'short', 
+            year: 'numeric' 
+        }) : 'N/A'
+      }));
+    }
+  } catch (error) {
+    console.error("Error fetching similar tenders:", error);
+  }
+}
+
+const navigateToTender = (tenderId) => {
+  // Push the new ID to the router
+  router.push(`/tenders/${tenderId}`).then(() => {
+    // Force a scroll to the top so the user sees the new tender from the start
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    
+    // Explicitly call your fetch function again because 
+    // onMounted only runs once per component lifecycle
+    fetchTenderDetails(); 
+  });
+}
 
 const handleSave = async () => {
   if (!tender.value) return 
@@ -216,6 +257,9 @@ const fetchTenderDetails = async () => {
       ].filter(t => t.date),
       similarTenders: []
     }
+    if (data.category) {
+            await fetchSimilarTenders(data.category, data.name)
+        }
   } catch (error) {
     console.error("Failed to fetch tender details:", error)
   } finally {
@@ -253,6 +297,14 @@ const mainBoqUrl = computed(() => {
    return itemWithBoq ? itemWithBoq.attach_boq : null
 })
 
+watch(
+  () => route.params.id,
+  (newId) => {
+    if (newId) {
+      fetchTenderDetails();
+    }
+  }
+)
 // --- UPDATED: Call both functions on mount ---
 onMounted(async () => {
   await fetchTenderDetails()
@@ -428,21 +480,30 @@ onMounted(async () => {
                 </div>
                  
                   <!-- Similar Tenders -->
-                  <div v-if="tender.similarTenders && tender.similarTenders.length > 0" class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                   <div v-if="similarTenders && similarTenders.length > 0" class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
                     <h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                        <Bookmark class="w-4 h-4 text-gray-400" /> Similar Tenders
+                      <Bookmark class="w-4 h-4 text-gray-400" /> Similar Tenders
                     </h3>
                     <div class="space-y-3">
-                       <div v-for="sim in tender.similarTenders" :key="sim.id" class="flex items-center justify-between p-4 rounded-lg border border-gray-100 hover:border-indigo-200 hover:bg-slate-50 transition-colors cursor-pointer group">
-                          <div>
-                             <div class="text-sm font-bold text-gray-900 group-hover:text-indigo-600">{{ sim.title }}</div>
-                             <div class="text-xs text-gray-500 mt-1">Budget: {{ sim.budget }} • Deadline: {{ sim.deadline }}</div>
+                      <div 
+                        v-for="sim in similarTenders" 
+                        :key="sim.id" 
+                        @click="navigateToTender(sim.id)"
+                        class="flex items-center justify-between p-4 rounded-lg border border-gray-100 hover:border-green-200 hover:bg-green-50/30 transition-all cursor-pointer group"
+                      >
+                        <div>
+                          <div class="text-sm font-bold text-gray-900 group-hover:text-green-600 transition-colors">
+                            {{ sim.title }}
                           </div>
-                          <ArrowRight class="w-4 h-4 text-gray-400 group-hover:text-indigo-600" />
-                       </div>
+                          <div class="text-xs text-gray-500 mt-1">
+                            Budget: ₹{{ sim.budget.toLocaleString('en-IN') }} • Deadline: {{ sim.deadline }}
+                          </div>
+                        </div>
+                        <ArrowRight class="w-4 h-4 text-gray-400 group-hover:text-green-600 transform group-hover:translate-x-1 transition-all" />
+                      </div>
                     </div>
-                 </div>
-             </div>
+                  </div>
+                  </div>
  
              <!-- SPECIFICATIONS TAB -->
              <div v-if="activeTab === 'Specifications'" class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
@@ -531,24 +592,7 @@ onMounted(async () => {
                       </div>
                    </div>
                 </div>
-             </div>
- 
-             <!-- Similar Tenders (Always Visible) -->
-              <div v-if="tender.similarTenders && tender.similarTenders.length > 0" class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                <h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                   <Share2 class="w-4 h-4 text-gray-400" /> Similar Tenders
-                </h3>
-                <div class="space-y-3">
-                   <div v-for="sim in tender.similarTenders" :key="sim.id" class="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-indigo-200 hover:bg-slate-50 transition-colors cursor-pointer">
-                      <div>
-                         <div class="text-sm font-medium text-gray-900">{{ sim.title }}</div>
-                         <div class="text-xs text-gray-500 mt-1">Budget: {{ sim.budget }} • Deadline: {{ sim.deadline }}</div>
-                      </div>
-                      <ArrowLeft class="w-4 h-4 text-gray-400 rotate-180" />
-                   </div>
-                </div>
-             </div>
- 
+             </div> 
           </div>
  
           <!-- Right Column (Stats & Actions) -->
