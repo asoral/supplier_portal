@@ -228,7 +228,7 @@ const fetchTenderDetails = async () => {
       location: data.billing_address ,
       category: data.category,
       status: data.status,
-      liveBidding: data.status === 'Active' && data.enable_live_bidding,
+      liveBidding: data.enable_live_bidding,
       description: data.description ,
       UOM:data.uom,
       quantity: data.total_quantity?.toLocaleString('en-IN') || 0,      
@@ -236,7 +236,7 @@ const fetchTenderDetails = async () => {
       estBudget: data.total_budget ,
       deadline: data.submission_date ,
       department: data.department ,
-      currentLowestBid: data.total_budget ,
+      currentLowestBid: parseFloat(data.custom_total_budget_ || data.total_budget) || 0,
       minBidDecrement: data.min_bid_decrement ,
       emdRequired: data.emd_amount ,
       termsData: data.terms || 'No terms and conditions provided.',
@@ -270,10 +270,10 @@ const fetchTenderDetails = async () => {
 const activeTab = ref('Overview')
 const tabs = ['Overview', 'Specifications', 'Documents', 'Timeline']
 const bidAmount = ref()
+const recentBids = ref([]);
+const portalSettings = ref({ quick_bid_percent: 0 });
+const currentSupplier = ref('');
 
-const placeBid = () => {
-   alert(`Bid placed for ₹${bidAmount.value}`)
-}
 
 const quickBid = (amount) => {
    if (tender.value && tender.value.currentLowestBid) {
@@ -281,35 +281,279 @@ const quickBid = (amount) => {
    }
 }
 
+const totalBidsReceived = ref(0);
+
+const fetchBidCount = async (rfqId) => {
+  try {
+    const response = await secureFetch(`/api/method/supplier_portal.api.get_tender_summary_stats?rfq_id=${rfqId}`);
+    const result = await response.json();
+    
+    // Check if result.message is an object and extract total_bids
+    if (result.message && typeof result.message === 'object') {
+      totalBidsReceived.value = result.message.total_bids || 0;
+    } else if (result.message !== undefined) {
+      // Fallback if the API returns a direct number
+      totalBidsReceived.value = result.message;
+    }
+  } catch (e) {
+    console.error("Error fetching bid count:", e);
+    totalBidsReceived.value = 0;
+  }
+};
+
 const formattedBudget = computed(() => {
    if (!tender.value) return '₹0'
    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(tender.value.estBudget)
 })
+const fetchSettings = async () => {
+    try {
+        const response = await fetch('/api/method/supplier_portal.api.get_portal_settings');
+        const result = await response.json();
+        // Frappe result is always in result.message
+        if (result.message) {
+            portalSettings.value = result.message;
+        }
+    } catch (e) {
+        console.error("Failed to fetch settings", e);
+    }
+};
 
 const formattedLowestBid = computed(() => {
-   if (!tender.value) return '₹0'
-   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(tender.value.currentLowestBid)
-})
+  if (recentBids.value && recentBids.value.length > 0) {
+    const minBid = Math.min(...recentBids.value.map(bid => bid.total || 0));
+    return new Intl.NumberFormat('en-IN', { 
+      style: 'currency', currency: 'INR', maximumFractionDigits: 0 
+    }).format(minBid);
+  }
+  return new Intl.NumberFormat('en-IN', { 
+    style: 'currency', currency: 'INR', maximumFractionDigits: 0 
+  }).format(tender.value?.currentLowestBid || 0);
+});
+
+const fetchRecentBids = async (tId) => {
+  if (!tId) return; // Prevent calling with undefined ID
+  
+  try {
+    // Ensure you use secureFetch to pass the session cookie/headers
+    const response = await secureFetch(`/api/method/supplier_portal.api.get_recent_bid_activity?rfq_id=${tId}`);
+    const result = await response.json();
+    
+    // 1. Frappe always wraps the return in 'message'
+    const data = result.message;
+
+    // 2. Check if data exists and bids is an array (even if empty)
+    if (data && Array.isArray(data.bids)) {
+      
+      // 3. Map the bids to your local state
+      recentBids.value = data.bids.map(bid => ({
+        supplier: bid.supplier,
+        // Use the 'total' field mapped in your Python: "grand_total as total"
+        total: parseFloat(bid.total) || 0,
+        // Ensure formatBidTime handles the 'creation' string correctly
+        time: formatBidTime(bid.creation) 
+      }));
+
+      // 4. CRITICAL: Store the current supplier ID for your HTML masking logic
+      // Without this, {{ bid.supplier === currentSupplier }} will always be false
+      currentSupplier.value = data.current_supplier || '';
+
+      console.log("Bids updated:", recentBids.value);
+      console.log("Current Supplier Identity:", currentSupplier.value);
+
+    } else {
+      console.warn("No bids data found in response:", result);
+      recentBids.value = [];
+    }
+  } catch (error) {
+    console.error("Fetch error in fetchRecentBids:", error);
+    recentBids.value = [];
+  }
+};
+
+const formatBidTime = (dateStr) => {
+  const diffInMinutes = Math.floor((new Date() - new Date(dateStr)) / 60000);
+  if (diffInMinutes < 1) return 'now';
+  if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+  return `${Math.floor(diffInMinutes / 60)}h ago`;
+}
+
+
+const placeBid = async () => {
+  if (!tender.value?.liveBidding) {
+    createToast('Bidding is not currently active for this tender', { type: 'danger' });
+    return;
+  }
+  
+  if (!bidAmount.value || bidAmount.value <= 0) {
+    createToast('Please enter a valid bid amount', { type: 'warning' });
+    return;
+  }
+
+  // --- NEW: Min Bid Decrement Validation ---
+  // 1. Determine current L1 from recent activity or initial budget
+  const currentL1 = recentBids.value.length > 0 
+  ? Math.min(...recentBids.value.map(b => b.total)) 
+  : (tender.value?.currentLowestBid || 0);
+
+// Ensure this field exists in your 'tender' object
+const minDecrement = tender.value?.minBidDecrement || 0;
+const maxAllowedBid = currentL1 - minDecrement;
+
+console.log("Current L1:", currentL1, "Min Decrement:", minDecrement, "Max Allowed:", maxAllowedBid);
+
+if (bidAmount.value > maxAllowedBid) {
+    createToast(
+      `Invalid Bid: You must bid ₹${maxAllowedBid.toLocaleString()} or lower (Min drop of ₹${minDecrement.toLocaleString()} required).`, 
+      { 
+        type: 'danger', 
+        timeout: 5000,
+        showIcon: true 
+      }
+    );
+    return; // This stops the code from reaching the API call
+  }
+
+  try {
+    isLoading.value = true;
+    
+    const response = await secureFetch('/api/method/supplier_portal.api.place_supplier_bid', {
+      method: 'POST',
+      body: JSON.stringify({
+        rfq_id: tender.value.id,
+        amount: bidAmount.value
+      })
+    });
+
+    const result = await response.json();
+
+    // Matching the backend return: {"status": "success", "message": "..."}
+    if (result.message && result.message.status === 'success') {
+      createToast(`Bid of ₹${Number(bidAmount.value).toLocaleString('en-IN')} placed!`, { type: 'success' });
+      
+      // TRIGGER REFRESH: This makes the new bid appear in the list immediately
+      await fetchRecentBids(tender.value.id); 
+      await fetchTenderDetails(tender.value.id);
+      await fetchBidCount(tender.value.id);
+      
+      bidAmount.value = null; 
+    } else {
+      // Backend error handling
+      const errorMsg = result.message?.message || 'Failed to place bid';
+      createToast(errorMsg, { type: 'danger' });
+    }
+  } catch (error) {
+    console.error("Bid submission error:", error);
+    createToast('An error occurred while placing the bid', { type: 'danger' });
+  } finally {
+    isLoading.value = false;
+  }
+}
+
+const currentL1Value = computed(() => {
+  // 1. If bids exist, use the lowest one
+  if (recentBids.value.length > 0) {
+    return Math.min(...recentBids.value.map(b => b.total));
+  }
+  
+  // 2. IF NO BIDS, use the Budget as the benchmark
+  // This prevents the "0" you see in the console
+  return tender.value?.estBudget || 0; 
+});
+
+const maxAllowedPrice = computed(() => {
+  const benchmark = currentL1Value.value; // Use the computed property above
+  const minDecrement = tender.value?.minBidDecrement || 0;
+
+  if (recentBids.value.length === 0) {
+    return benchmark > 0 ? benchmark : 999999999;
+  }
+  return benchmark - minDecrement;
+});
+
+const budgetSavings = computed(() => {
+  const budget = tender.value?.total_budget || 0;
+  const currentL1 = recentBids.value.length > 0 
+    ? Math.min(...recentBids.value.map(b => b.total)) 
+    : (tender.value?.currentLowestBid || 0);
+
+  // If budget is 0, just show ₹0 savings or hide it
+  if (budget <= 0) return 0;
+
+  return budget - currentL1;
+});
+
+const quickBidAmount = computed(() => {
+  const benchmark = recentBids.value.length > 0 
+    ? Math.min(...recentBids.value.map(b => b.total)) 
+    : (tender.value?.estBudget || 0);
+  
+  if (benchmark <= 0) return 0;
+
+  let percent = portalSettings.value.live_bidding_quick_entry_percent || 0;
+  if (percent > 100) percent = percent / 1000; 
+
+  const percentageDrop = benchmark * (percent / 100);
+
+  // For the first bid, just suggest the Budget minus the percentage drop
+  if (recentBids.value.length === 0) {
+    return Math.floor(benchmark - percentageDrop);
+  }
+
+  // For competitive bidding, use the larger of percentage or min decrement
+  const minDecrement = tender.value?.minBidDecrement || 0;
+  const actualDrop = Math.max(percentageDrop, minDecrement);
+  
+  const nextBid = benchmark - actualDrop;
+  return nextBid > 0 ? Math.floor(nextBid) : 0;
+});
+
+
+const refreshAllData = async (id) => {
+   if (!id) return;
+   isLoading.value = true;
+   recentBids.value = []; 
+  
+  try {
+    await Promise.all([
+      fetchTenderDetails(id),
+      checkSavedStatus(id),
+      fetchRecentBids(id),
+      fetchSettings(),
+      fetchBidCount(id),
+    ]);
+  } catch (error) {
+    console.error("Error refreshing data:", error);
+  } finally {
+    isLoading.value = false;
+  }
+};
 
 const mainBoqUrl = computed(() => {
-   if (!tender.value || !tender.value.items) return null
-   const itemWithBoq = tender.value.items.find(i => i.attach_boq)
-   return itemWithBoq ? itemWithBoq.attach_boq : null
+   if (!tender.value || !tender.value.items) return null;
+      const itemWithBoq = tender.value.items.find(i => i.attach_boq);
+   
+   return itemWithBoq ? itemWithBoq.attach_boq : null;
+});
+
+watch(() => route.params.id, (newId) => {
+  if (newId) {
+   //  fetchTenderDetails(newId); 
+   //  checkSavedStatus(newId);
+    refreshAllData(newId);
+    window.scrollTo({ top: 0, behavior: 'smooth' }); 
+  }
+}); 
+
+onMounted(async () => {
+  if (route.params.id) {
+   //  await fetchTenderDetails(route.params.id)
+   //  await checkSavedStatus(route.params.id)
+   //  await fetchRecentBids(route.params.id)
+   //  await fetchSettings();
+    await refreshAllData(route.params.id);
+  }
 })
 
-watch(
-  () => route.params.id,
-  (newId) => {
-    if (newId) {
-      fetchTenderDetails();
-    }
-  }
-)
-// --- UPDATED: Call both functions on mount ---
-onMounted(async () => {
-  await fetchTenderDetails()
-  await checkSavedStatus()
-})
 </script>
 
 <template>
@@ -615,7 +859,7 @@ onMounted(async () => {
       <div class="flex items-center gap-1.5 text-xs text-gray-500 mb-0.5">
          <UserCircle class="w-3.5 h-3.5" /> Bids Received
       </div>
-      <div class="font-bold text-gray-900">{{ tender.bidsReceived }}</div>
+     {{ typeof totalBidsReceived === 'object' ? totalBidsReceived.total_bids : totalBidsReceived }}
    </div>
 
    <div>
@@ -648,75 +892,130 @@ onMounted(async () => {
        </div>
     </div>
 
-    <button class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-lg shadow-sm transition-colors mb-3 flex items-center justify-center gap-2">
-      <Zap class="w-4 h-4" /> Submit Your Bid
-   </button>
+    <div class="flex items-center gap-2 mb-3">
+  <button 
+    class="flex-grow bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2"
+    @click="openBidModal"
+  >
+    <Zap class="w-4 h-4" /> Submit Your Bid
+  </button>
 
-   <div class="flex items-center gap-2">
-      <a :href="mainBoqUrl || '#'" target="_blank" 
-         class="flex-grow bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 text-sm font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer no-underline">
-         <Download class="w-4 h-4 text-gray-500" /> Download BOQ
-      </a>
-
-      <button @click="goToQueries" class="p-2.5 bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors shadow-sm">
-         <MessageSquare class="w-5 h-5" />
-      </button>
-   </div>
+  <button 
+    @click="goToQueries" 
+    class="p-2.5 bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
+    title="Ask a Query"
+  >
+    <MessageSquare class="w-5 h-5" />
+  </button>
 </div>
-            
+
+<div v-if="mainBoqUrl">
+  <a 
+    :href="mainBoqUrl" 
+    target="_blank" 
+    class="w-full bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 text-sm font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer no-underline"
+  >
+    <Download class="w-4 h-4 text-gray-500" /> Download BOQ
+  </a>
+</div>
+</div>
+
             
              <!-- Live Bidding Card -->
-             <div v-if="tender.liveBidding" class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm ring-1 ring-gray-200">
-                 <div class="flex items-center justify-between mb-6">
-                    <div class="inline-flex items-center rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 ring-1 ring-inset ring-red-600/20">
-                       <span class="relative flex h-2 w-2 mr-2">
-                         <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                         <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                       </span>
-                       Live Bidding Active
-                    </div>
-                    <span class="text-xs text-gray-400">Updated 2s ago</span>
-                 </div>
- 
-                 <div class="text-center py-6 bg-white rounded-xl border-2 border-green-500/20 mb-6 shadow-[0_0_15px_rgba(34,197,94,0.1)]">
-                   <div class="text-xs text-gray-500 font-medium mb-1 uppercase tracking-wider">Current Lowest Bid</div>
-                   <div class="text-3xl font-bold text-green-600 tracking-tight">{{ formattedLowestBid }}</div>
-                    <div class="text-xs font-medium text-green-600 mt-1 flex items-center justify-center gap-1">
-                       <TrendingDown class="w-3 h-3" /> ₹20,000 below budget
-                    </div>
-                 </div>
- 
-                 <div class="space-y-4">
-                    <div>
-                       <label class="text-xs font-semibold text-gray-700 mb-2 block">Enter Your Bid Amount</label>
-                       <div class="flex gap-2">
-                          <div class="relative flex-grow">
-                             <span class="absolute left-3 top-2.5 text-gray-400">₹</span>
-                             <input v-model="bidAmount" type="number" class="w-full pl-7 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400" placeholder="Enter amount">
-                          </div>
-                          <button @click="placeBid" class="bg-amber-400 hover:bg-amber-500 text-amber-950 px-6 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors whitespace-nowrap">Place Bid</button>
-                       </div>
-                    </div>
-                    
-                    <button @click="quickBid(tender.minBidDecrement)" class="w-full group flex items-center justify-center gap-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 text-xs font-semibold py-2.5 rounded-lg transition-all">
-                       <Zap class="w-3 h-3 text-amber-500 group-hover:text-amber-600" />
-                       Quick bid: ₹{{ (tender.currentLowestBid - tender.minBidDecrement).toLocaleString() }}
-                    </button>
-                 </div>
- 
-                 <div class="mt-8 pt-6 border-t border-gray-100">
-                    <h4 class="text-xs font-bold text-gray-900 mb-4">Recent Bid Activity</h4>
-                    <div class="space-y-3">
-                       <div v-for="(bid, idx) in tender.recentBids" :key="idx" class="flex items-center justify-between text-xs pb-3 border-b border-gray-50 last:border-0 last:pb-0">
-                          <span class="font-medium text-gray-600">{{ bid.vendor }}</span>
-                          <div class="text-right">
-                             <div class="font-bold text-green-600">₹{{ bid.amount.toLocaleString() }}</div>
-                             <span class="text-gray-400 text-[10px]">{{ bid.time }}</span>
-                          </div>
-                       </div>
-                    </div>
-                 </div>
-             </div>
+          <div v-if="tender.liveBidding" class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm ring-1 ring-gray-200">
+  
+  <div class="flex items-center justify-between mb-4">
+    <div class="flex items-center gap-2 px-2.5 py-1 bg-red-50 rounded-full border border-red-100">
+      <span class="relative flex h-2 w-2">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+        <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+      </span>
+      <span class="text-[10px] font-bold text-red-600 uppercase tracking-wider">Live Bidding Active</span>
+    </div>
+    <div class="text-[10px] text-gray-400 font-medium italic">
+      Updated 0s ago
+    </div>
+  </div>
+
+  <div class="text-center py-6 bg-white rounded-xl border-2 border-green-500/20 mb-6 shadow-[0_0_15px_rgba(34,197,94,0.1)]">
+    <div class="text-xs text-gray-500 font-medium mb-1 uppercase tracking-wider">Current Lowest Bid</div>
+    <div class="text-3xl font-bold text-green-600 tracking-tight">{{ formattedLowestBid }}</div>
+    
+    <div v-if="recentBids.length > 0" class="text-xs font-medium text-green-600 mt-1 flex items-center justify-center gap-1">
+       <TrendingDown class="w-3 h-3" /> 
+       ₹{{ (tender.estBudget - Math.min(...recentBids.map(b => b.total))).toLocaleString('en-IN') }} below budget
+    </div>
+  </div>
+
+  <div class="mb-4">
+    <label class="text-xs font-semibold text-gray-700 mb-2 block">Enter Your Bid Amount</label>
+    <div class="flex gap-2 mb-3"> 
+      <div class="relative flex-grow">
+        <span class="absolute left-3 top-2.5 text-gray-400">₹</span>
+        <input v-model="bidAmount" type="number" class="w-full pl-7 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400" placeholder="Enter amount">
+      </div>
+      <button 
+         @click="placeBid"
+         :disabled="!bidAmount || bidAmount <= 0 || isLoading"
+        :class="[
+            'px-4 py-2 bg-orange-400 text-white rounded-lg font-medium transition-all flex items-center gap-2',
+            (!bidAmount || bidAmount <= 0 || isLoading || bidAmount > maxAllowedPrice) 
+               ? 'opacity-40 cursor-not-allowed pointer-events-none select-none' 
+               : 'opacity-100 hover:bg-orange-500 active:scale-95'
+         ]"
+         >
+         <span v-if="isLoading">Placing...</span>
+         <template v-else>
+            Bid
+         </template>
+      </button>
+    </div>
+
+    <div class="min-h-[20px] mb-3">
+      <p v-if="bidAmount > maxAllowedPrice" class="text-[11px] text-red-600 font-bold px-1 flex items-center gap-1">
+        <AlertCircle class="w-3 h-3" /> 
+        Must be ₹{{ maxAllowedPrice.toLocaleString('en-IN') }} or less to qualify
+      </p>
+    </div>
+
+      <button 
+   @click="bidAmount = quickBidAmount" 
+   :disabled="quickBidAmount <= 0"
+   class="w-full py-1.5 border border-gray-200 rounded-lg flex items-center justify-center gap-2 text-gray-700 hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
+   >
+   <ArrowDown class="w-4 h-4 text-gray-500" />
+   Quick bid: ₹{{ quickBidAmount.toLocaleString('en-IN') }}
+      </button>
+  </div>
+
+  <div class="mt-6">
+    <h4 class="text-xs font-bold text-gray-900 mb-4 uppercase tracking-wider">Recent Bid Activity</h4>
+    
+    <div v-if="recentBids.length === 0" class="text-center py-4 text-xs text-gray-400 italic">
+      No bids placed yet. Be the first!
+    </div>
+
+    <div v-for="(bid, idx) in recentBids" :key="idx" 
+         class="flex items-center justify-between py-3 border-b border-gray-50 last:border-0"
+         :class="{'bg-green-50 -mx-2 px-3 rounded-lg shadow-sm': idx === 0}">
+      <div class="flex flex-col">
+        <span class="font-bold text-sm" :class="idx === 0 ? 'text-green-700' : 'text-gray-700'">
+          {{ bid.supplier === currentSupplier ? bid.supplier : 'Masked Supplier' }}
+        </span>
+        <span class="text-[10px] text-gray-400">
+          {{ bid.time || 'Just now' }}
+        </span>
+      </div>
+      <div class="text-right">
+        <div class="font-bold" :class="idx === 0 ? 'text-green-600' : 'text-gray-900'">
+          ₹{{ new Intl.NumberFormat('en-IN').format(bid.total) }}
+        </div>
+        <span v-if="idx === 0" class="text-[10px] font-bold text-green-500 uppercase">Current L1</span>
+      </div>
+    </div>
+  </div>
+</div>
+
  
              <!-- Help Box -->
              <div class="bg-indigo-900 rounded-xl p-6 text-white text-center">
