@@ -671,19 +671,24 @@ def get_catalog_items():
         "current_supplier": current_supplier
     }
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist() # Remove allow_guest=True for security; catalog belongs to users
 def add_to_catalog(item_id):
     user = frappe.session.user
-    supplier = frappe.db.get_value("Portal User", {"user": user, "parenttype": "Supplier"}, "parent")
+    supplier = frappe.db.get_value("Portal User", {"user": user}, "parent")
     
     if not supplier:
-        frappe.throw("Supplier not found for this user.")
+        frappe.throw("No Supplier account associated with your profile.")
 
-        doc = frappe.get_doc("Item", item_id)
+    doc = frappe.get_doc("Item", item_id)
+    
+    exists = any(row.supplier == supplier for row in doc.get("supplier_items", []))
+    
+    if not exists:
         doc.append("supplier_items", {
             "supplier": supplier
         })
         doc.save(ignore_permissions=True)
+        frappe.db.commit() 
     
     return "success"
 
@@ -731,6 +736,36 @@ def remove_from_catalog(item_id):
     })
     
     return "success"
+@frappe.whitelist()
+def update_catalog_item(**args):
+    """Consolidated update function for the catalog"""
+    item_id = args.get('item_id')
+    if not item_id:
+        frappe.throw("Item ID is required for updating.")
+
+    try:
+        doc = frappe.get_doc("Item", item_id)
+        
+        # Core Fields
+        doc.item_name = args.get('name')
+        doc.standard_rate = args.get('price')
+        doc.description = args.get('description')
+        
+        # Custom Fields - Ensure these internal names match your Item DocType exactly
+        # If your Frappe fields use different names, change the left side (doc.field_name)
+        doc.lead_time_days = args.get('leadTime')
+        doc.min_order_qty = args.get('moq')
+        
+        # If you have a custom tax field:
+        # doc.custom_gst_rate = args.get('tax') 
+        
+        doc.save(ignore_permissions=True)
+        frappe.db.commit() 
+        
+        return "success"
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Catalog Update Error")
+        return {"status": "error", "message": str(e)}
 
 @frappe.whitelist(allow_guest=True)
 def update_supplier_item(**args):
