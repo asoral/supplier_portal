@@ -30,20 +30,21 @@ const newProduct = ref({
   description: '' 
 })
 
-const openEditModal = (product) => {
+const openEditModal = (item) => { // Using 'item' here
   isEditing.value = true;
   
   newProduct.value = {
-    id: product.id, 
-    name: product.name,
-    sku: product.sku,
-    category: product.category,
-    unit: product.unit || 'Nos',
-    price: product.price,
-    tax: product.tax,
-    moq: product.min_order_qty || 1,
-    leadTime: item.lead_time_days || 'N/A',
-    description: product.description
+    id: item.id, 
+    name: item.name,
+    sku: item.sku,
+    category: item.category,
+    unit: item.unit || 'Nos',
+    price: item.price,
+    tax: item.tax,
+    moq: item.min_order_qty || 1,
+    // This was the line causing the error; it now correctly references 'item'
+    leadTime: item.lead_time_days || 'N/A', 
+    description: item.description
   };
   
   isAddProductModalOpen.value = true;
@@ -94,15 +95,25 @@ const filteredProducts = computed(() => {
   });
 });
 
-// --- Actions ---
 const openAddModal = () => {
-  // Check auth first
   if (!authStore.user) {
       alert("Please login to manage products.");
       return;
   }
   isEditing.value = false;
-  newProduct.value = { id: '', name: '', sku: '', category: '', unit: '', price: 0, tax: '', moq: '', leadTime: '', description: '' };
+  // Resetting all fields, especially id, to ensure a fresh entry
+  newProduct.value = { 
+    id: '', 
+    name: '', 
+    sku: '', 
+    category: '', 
+    unit: '', 
+    price: 0, 
+    tax: '', 
+    moq: '', 
+    leadTime: '', 
+    description: '' 
+  };
   isAddProductModalOpen.value = true;
 };
 
@@ -111,36 +122,45 @@ const closeAddModal = () => {
 };
 
 const submitProduct = async () => {
-  if (!newProduct.value.name) {
-    alert("Please enter a product name");
+  if (!newProduct.value.name || !newProduct.value.price) {
+    alert("Please enter both product name and price");
     return;
   }
 
   try {
     loading.value = true;
     
-    // Choose the correct API endpoint based on the mode
-    const method = isEditing.value 
-      ? '/api/method/supplier_portal.api.update_supplier_item' 
-      : '/api/method/supplier_portal.api.create_supplier_item';
+    // We only use the catalog update path now
+    const method = '/api/method/supplier_portal.api.update_catalog_item';
+
+    const payload = {
+      item_id: newProduct.value.id, 
+      name: newProduct.value.name,
+      price: newProduct.value.price,
+      moq: newProduct.value.moq,
+      leadTime: newProduct.value.leadTime,
+      description: newProduct.value.description,
+      tax: newProduct.value.tax 
+    };
 
     const response = await secureFetch(method, {
       method: 'POST',
-      body: JSON.stringify(newProduct.value) 
+      body: JSON.stringify(payload) 
     });
 
-    const data = await response.json();
+    const result = await response.json();
     
-    if (data.message === "success") {
+    // Result handling based on Frappe return
+    if (result.message === "success") {
       closeAddModal();
-      await fetchProducts(); // Refresh catalog to show updated info
-      alert(isEditing.value ? "Product updated successfully!" : "Product added successfully!");
+      await fetchProducts(); // Refresh the list
+      alert("Product updated successfully!");
     } else {
-      alert("Error: " + (data.message || "Failed to save product"));
+      alert("Error: " + (result.message?.message || "Failed to update product"));
     }
   } catch (error) {
-    console.error("Submission failed:", error);
-    alert("An error occurred while saving the product.");
+    console.error("Update failed:", error);
+    alert("An error occurred during submission.");
   } finally {
     loading.value = false;
   }
@@ -218,9 +238,6 @@ const stats = computed(() => [
         <h1 class="text-3xl font-bold tracking-tight text-gray-900">Product Catalog</h1>
         <p class="mt-1 text-sm text-gray-500">Manage your product catalog and pricing.</p>
       </div>
-      <button @click="openAddModal" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 flex items-center gap-2">
-         <Plus class="h-4 w-4" /> Add Product
-      </button>
     </div>
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-4 mb-8">
@@ -312,30 +329,37 @@ const stats = computed(() => [
                    <p class="text-sm text-gray-600 leading-relaxed">{{ product.description }}</p>
                 </div>
 
-                <div class="flex lg:flex-col items-center lg:items-end justify-between lg:justify-center gap-1 min-w-[180px] border-t lg:border-t-0 lg:border-l border-gray-100 pt-4 lg:pt-0 lg:pl-8">
-                    <div class="text-right">
-                       <div class="text-2xl font-bold text-gray-900">₹{{ Number(product.price).toLocaleString() }}</div>
-                       <div class="text-xs text-gray-400 font-medium">+ {{ product.tax }}</div>
-                    </div>
-                    <div class="lg:mt-4 text-right text-sm text-gray-500 leading-tight">
-                       <div class="flex justify-end gap-1">
-                           <span class="text-gray-400">Lead:</span> 
-                           <span class="font-medium text-gray-700">{{ product.leadTime }} </span>
-                        </div>
-                       <div class="flex justify-end gap-1">
-                         <span class="text-gray-400">MOQ:</span> 
-                         <span class="font-medium text-gray-700">{{ product.moq }}</span>
-                       </div>
-                    </div>
-                    <div class="flex gap-2 mt-4">
-                        <button @click="openEditModal(product)" class="p-2 text-gray-400 hover:text-indigo-600 rounded-md hover:bg-gray-50 transition-colors">
-                           <Edit2 class="h-4 w-4" />
-                        </button>
-                        <button @click="deleteProduct(product.id)" class="p-2 text-gray-400 hover:text-red-600 rounded-md hover:bg-gray-50 transition-colors">
-                          <Trash2 class="h-4 w-4" />
-                       </button>
-                    </div>
-                </div>
+                <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 min-w-[320px] border-t lg:border-t-0 lg:border-l border-gray-100 pt-4 lg:pt-0 lg:pl-8">
+    
+    <div class="text-right flex-shrink-0">
+        <div class="text-xl font-bold text-gray-900">₹{{ Number(product.price).toLocaleString() }}</div>
+        <div class="text-[14px] text-gray-400 font-medium">+ {{ product.tax }}</div>
+    </div>
+
+    <div class="text-right text-[14px] text-gray-500 leading-tight min-w-[80px]">
+        <div class="flex justify-end gap-1">
+            <span class="text-gray-400">Lead:</span> 
+            <span class="font-medium text-gray-700">{{ product.leadTime }}</span>
+        </div>
+        <div class="flex justify-end gap-1">
+            <span class="text-gray-400">MOQ:</span> 
+            <span class="font-medium text-gray-700">{{ product.moq }}</span>
+        </div>
+    </div>
+
+   <div class="flex lg:flex-row gap-1 items-center">
+    <button @click="openEditModal(product)" 
+            class="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors">
+        <Edit2 class="h-4 w-4" />
+    </button>
+    
+    <button @click="deleteProduct(product.id)" 
+            class="p-2 text-red-500 hover:bg-red-50 rounded-md transition-colors">
+        <Trash2 class="h-4 w-4" />
+    </button>
+</div>
+</div>
+
              </div>
           </div>
 
@@ -352,6 +376,7 @@ const stats = computed(() => [
             </button>
           </div>
        </div>
+
     </div>
 
     <div v-if="isAddProductModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
