@@ -226,14 +226,12 @@ def get_tender_details(name):
         })
         total_qty += item.qty
         
-    # Get Attachments (Standard Files)
     attachments = frappe.get_all("File", 
-        filters={"attached_to_name": name, "attached_to_doctype": "Request for Quotation", "is_private": 0},
-        fields=["file_name", "file_url", "file_size"],
-        ignore_permissions=True
-    )
+    filters={"attached_to_name": name, "attached_to_doctype": "Request for Quotation", "is_private": 0},
+    fields=["file_name", "file_url", "file_size"],
+    ignore_permissions=True
+)
     
-    # Add custom_downloadable_forms if exists
     if doc.get("custom_downloadable_forms"):
         attachments.append({
             "file_name": "Tender Form", 
@@ -1055,3 +1053,114 @@ def get_similar_tenders(category, exclude_id):
         ],
         limit=5
     )
+
+
+@frappe.whitelist(allow_guest=True)
+def place_supplier_bid(rfq_id, amount):
+    try:
+        supplier_name = frappe.db.get_value("Portal User", 
+            {"user": frappe.session.user, "parenttype": "Supplier"}, 
+            "parent")
+
+        if not supplier_name:
+            return {"status": "error", "message": "Your user account is not linked to a Supplier."}
+
+        rfq = frappe.get_doc("Request for Quotation", rfq_id)
+        
+        if not rfq.custom_enable_live_bidding:
+            return {"status": "error", "message": "Live bidding is not active for this tender."}
+
+        sq = frappe.new_doc("Supplier Quotation")
+        sq.request_for_quotation = rfq_id
+        sq.supplier = supplier_name
+        sq.transaction_date = frappe.utils.nowdate()
+
+        for item in rfq.items:
+            sq.append("items", {
+                "item_code": item.item_code,
+                "qty": item.qty,
+                "rate": amount,
+                "uom": item.uom,
+                "warehouse": item.warehouse
+            })
+
+        sq.insert(ignore_permissions=True)
+        
+        return {
+            "status": "success", 
+            "message": f"Bid placed successfully! Quotation {sq.name} created."
+        }
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Bid Placement Error")
+        return {"status": "error", "message": str(e)}
+    
+@frappe.whitelist(allow_guest=True)
+def get_recent_bid_activity(rfq_id):
+    bids = frappe.db.get_list("Supplier Quotation", 
+        filters={
+            "request_for_quotation": rfq_id, 
+            "docstatus": 0
+        },
+        fields=["supplier", "grand_total as total", "creation"],
+        order_by="creation desc", 
+        limit=5,
+        ignore_permissions=True
+    )
+    
+    current_supplier = frappe.db.get_value("Portal User", 
+        {"user": frappe.session.user, "parenttype": "Supplier"}, 
+        "parent")
+
+    return {
+        "bids": bids,
+        "current_supplier": current_supplier
+    }
+    
+@frappe.whitelist(allow_guest=True)
+def place_supplier_bid(rfq_id, amount):
+    try:
+        supplier_name = frappe.db.get_value("Portal User", {"user": frappe.session.user}, "parent")
+
+        rfq = frappe.get_doc("Request for Quotation", rfq_id)
+
+        sq = frappe.new_doc("Supplier Quotation")
+        
+        sq.request_for_quotation = rfq_id 
+        sq.supplier = supplier_name
+        sq.transaction_date = frappe.utils.nowdate()
+
+        for item in rfq.items:
+            sq.append("items", {
+                "item_code": item.item_code,
+                "qty": item.qty,
+                "rate": amount,
+                "uom": item.uom,
+                "warehouse": item.warehouse,
+                "request_for_quotation": rfq_id
+            })
+
+        sq.run_method("calculate_taxes_and_totals")
+        sq.insert(ignore_permissions=True)
+        
+        return {"status": "success", "message": "Linked successfully"}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Link Error")
+        return {"status": "error", "message": str(e)}
+    
+@frappe.whitelist()
+def get_portal_settings():
+    percent = frappe.db.get_single_value("Supplier Portal Settings", "live_bidding_quick_entry_percent") or 0
+    return {
+        "live_bidding_quick_entry_percent": percent 
+    }
+
+@frappe.whitelist()
+def get_tender_summary_stats(rfq_id):
+    total_bids = frappe.db.count("Supplier Quotation", {
+        "request_for_quotation": rfq_id,
+        "docstatus": ["<", 2]  
+    })
+
+    return {
+        "total_bids": total_bids
+    }
