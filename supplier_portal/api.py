@@ -810,9 +810,11 @@ def get_dashboard_stats():
         }
 
     total_bids = frappe.db.count("Supplier Quotation", {
-        "supplier": supplier,
-        "docstatus": 1
+    "supplier": supplier,
+    "docstatus": 1,       
+    "status": "Submitted"  
     })
+
     print("----------------total_bids",total_bids)
 
     orders_won = frappe.db.count("Purchase Order", {
@@ -927,7 +929,7 @@ def get_dashboard_stats():
             "total_bids": total_bids,
             "orders_won": orders_won,
             "pending_review": pending_review,
-            "win_rate": f"{int((orders_won / total_bids) * 100)}%" if total_bids > 0 else "0%",
+            "win_rate": f"{min(int((orders_won / total_bids) * 100), 100)}%" if total_bids > 0 else "0%",
             "total_bid_value": f"{float(total_bid_value or 0):,.2f}",
             "orders_won_value": f"{float(orders_won_value):,.2f}"
         },
@@ -1055,3 +1057,14 @@ def get_similar_tenders(category, exclude_id):
         ],
         limit=5
     )
+
+@frappe.whitelist()
+def get_count_saved_tenders():
+    user = frappe.session.user
+   
+    saved_records = frappe.get_all("Saved RFQ", 
+        filters={"owner": user}, 
+        fields=["name", "rfq"]
+    )
+    
+    return saved_records

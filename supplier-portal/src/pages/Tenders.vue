@@ -11,6 +11,23 @@ const route = useRoute()
 const router = useRouter()
 const isSessionExpired = ref(false)
 const searchQuery = ref('')
+const savedCount = ref(0);
+
+const fetchSavedCount = async () => {
+  if (!authStore.isAuthenticated) return;
+  try {
+    const response = await authStore.secureFetch('/api/method/supplier_portal.api.get_count_saved_tenders');
+    const result = await response.json();
+    const data = result.message || [];
+    savedCount.value = data.length;
+  } catch (error) {
+    console.error("Error fetching saved count:", error);
+  }
+};
+
+const goToSavedTenders = () => {
+  router.push('/saved-tenders'); 
+};
 
 const refetchSession = async () => {
    // Try to bounce the session
@@ -37,7 +54,7 @@ const fetchTenders = async () => {
   try {
     const params = new URLSearchParams({ 
       limit: 20,
-      priority: selectedPriority.value // This sends 'Urgent', 'High', etc.
+      priority: selectedPriority.value
     })
     const response = await authStore.secureFetch('/api/method/supplier_portal.api.get_active_tenders?' + new URLSearchParams({
        limit: 20
@@ -62,7 +79,6 @@ const fetchTenders = async () => {
       deadline: rfq.custom_bid_submission_last_date,             
       publishedDate: rfq.custom_publish_date,
       priority: rfq.custom_priority,
-      // Check for live bidding enablement
       liveBidding: rfq.custom_bid_status === 'Active' && rfq.custom_enable_live_bidding
     }))
   }catch (error) {
@@ -72,8 +88,13 @@ const fetchTenders = async () => {
   }
 }
 
+watch(selectedPriority, () => {
+  fetchTenders()
+})
+
 onMounted(() => {
    fetchTenders();
+   fetchSavedCount();
    if (route.query.category) {
       selectedCategory.value = route.query.category
    }
@@ -161,8 +182,8 @@ const clearFilters = () => {
         <p class="mt-1 text-sm text-gray-500">{{ filteredTenders.length }} active tenders • 1 closing soon</p>
       </div>
       <div class="mt-4 md:mt-0 flex gap-3">
-         <button class="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
-            <Bookmark class="h-4 w-4" /> Saved (0)
+         <button @click="goToSavedTenders" class="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
+            <Bookmark class="h-4 w-4" /> Saved ({{ savedCount }})
          </button>
          <button class="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
             <Bell class="h-4 w-4" /> Set Alert
@@ -216,19 +237,21 @@ const clearFilters = () => {
 
          <!-- Priority Filter -->
          <div>
-            <h4 class="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-3">Priority</h4>
-            <div class="flex flex-wrap gap-2">
-               <button 
-                  v-for="priority in priorities" 
-                  :key="priority"
-                  @click="selectedPriority = priority"
-                  class="rounded-md px-3 py-1 text-xs font-medium border transition-colors"
-                  :class="selectedPriority === priority ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'"
-               >
-                  {{ priority }}
-               </button>
-            </div>
-         </div>
+   <h4 class="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-3">Priority Level</h4>
+   <div class="flex flex-wrap gap-2">
+      <button 
+         v-for="priority in priorities" 
+         :key="priority"
+         @click="selectedPriority = priority"
+         class="rounded-md px-3 py-1 text-xs font-medium border transition-colors"
+         :class="selectedPriority === priority 
+            ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
+            : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'"
+      >
+         {{ priority }}
+      </button>
+   </div>
+</div>
 
          <div class="border-t border-gray-200 my-4"></div>
 

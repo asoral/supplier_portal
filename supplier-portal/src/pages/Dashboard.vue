@@ -78,8 +78,7 @@ const fetchDashboardStats = async () => {
             const s = result.message.stats;
             stats.value[0].value = s.total_bids
             stats.value[1].value = s.orders_won
-            stats.value[0].value = `₹${s.total_bid_value}`;
-            stats.value[1].value = `₹${s.orders_won_value}`;
+            
             stats.value[2].value = s.pending_review
             stats.value[3].value = s.win_rate
 
