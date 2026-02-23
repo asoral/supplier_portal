@@ -17,7 +17,7 @@ def register_vendor(company_name, email, contact_person, phone, gst=None, passwo
         user.first_name = contact_person
         user.mobile_no = phone
         user.enabled = 1
-        user.user_type = "Website User" 
+        user.user_type = "System User" 
         user.new_password = password
         user.send_welcome_email = 0  
         user.save(ignore_permissions=True)
@@ -102,13 +102,11 @@ def get_active_tenders(limit=20, offset=0, priority=None):
     
     try:
         if user and user != "Guest":
-            # 1. Broadly find all Suppliers linked to this user
             suppliers = [s.parent for s in frappe.get_all("Portal User", 
                 filters={"user": user, "parenttype": "Supplier"}, 
                 fields=["parent"], ignore_permissions=True)]
             
             if suppliers:
-                # 2. Find RFQs inviting these suppliers
                 invited_rfq_names = [r.parent for r in frappe.get_all("Request for Quotation Supplier", 
                     filters={"supplier": ["in", suppliers]}, 
                     fields=["parent"], ignore_permissions=True)]
@@ -116,27 +114,21 @@ def get_active_tenders(limit=20, offset=0, priority=None):
         frappe.log_error(f"Active Tenders Permission Error: {str(e)}")
         pass
 
-    # --- START OF QUERY VALUE CONSTRUCTION ---
-    # The order here MUST match the order of %s in the SQL string
     query_values = []
-
-    # 1. Private Condition Placeholders
+    
     if invited_rfq_names:
-        in_placeholder = ', '.join(['%s'] * len(invited_rfq_names))
-        private_condition = f"OR name IN ({in_placeholder})"
-        query_values.extend(invited_rfq_names) # Add names to list
+        placeholders = ', '.join(['%s'] * len(invited_rfq_names))
+        private_condition = f"OR name IN ({placeholders})"
+        query_values.extend(invited_rfq_names)
     else:
         private_condition = "OR 1=0"
 
-    # 2. Priority Condition Placeholder
     priority_sql = ""
     if priority and priority != "All":
         priority_sql = "AND custom_priority = %s"
-        query_values.append(priority) # Add priority to list after RFQ names
+        query_values.append(priority)
 
-    # 3. Limit and Offset Placeholders
-    query_values.extend([limit, offset]) # Add these last
-    # --- END OF QUERY VALUE CONSTRUCTION ---
+    query_values.extend([int(limit), int(offset)])
 
     sql = f"""
         SELECT 
@@ -151,26 +143,19 @@ def get_active_tenders(limit=20, offset=0, priority=None):
             custom_enable_live_bidding, 
             transaction_date, 
             status,
-            custom_priority,
             custom_publish_on_website
         FROM `tabRequest for Quotation`
-        WHERE docstatus < 2
+        WHERE docstatus = 1
         AND (
             custom_publish_on_website = 1
-            {private_condition}
+            {private_condition} 
         )
         {priority_sql}
         ORDER BY modified DESC
         LIMIT %s OFFSET %s
     """
     
-    try:
-        data = frappe.db.sql(sql, tuple(query_values), as_dict=True)
-    except Exception as e:
-        frappe.log_error("Get Active Tenders SQL Error", str(e))
-        return []
-
-    return data
+    return frappe.db.sql(sql, tuple(query_values), as_dict=True)
 
 @frappe.whitelist(allow_guest=True)
 def get_tender_details(name):
@@ -1055,44 +1040,44 @@ def get_similar_tenders(category, exclude_id):
     )
 
 
-@frappe.whitelist(allow_guest=True)
-def place_supplier_bid(rfq_id, amount):
-    try:
-        supplier_name = frappe.db.get_value("Portal User", 
-            {"user": frappe.session.user, "parenttype": "Supplier"}, 
-            "parent")
+# @frappe.whitelist(allow_guest=True)
+# def place_supplier_bid(rfq_id, amount):
+#     try:
+#         supplier_name = frappe.db.get_value("Portal User", 
+#             {"user": frappe.session.user, "parenttype": "Supplier"}, 
+#             "parent")
 
-        if not supplier_name:
-            return {"status": "error", "message": "Your user account is not linked to a Supplier."}
+#         if not supplier_name:
+#             return {"status": "error", "message": "Your user account is not linked to a Supplier."}
 
-        rfq = frappe.get_doc("Request for Quotation", rfq_id)
+#         rfq = frappe.get_doc("Request for Quotation", rfq_id)
         
-        if not rfq.custom_enable_live_bidding:
-            return {"status": "error", "message": "Live bidding is not active for this tender."}
+#         if not rfq.custom_enable_live_bidding:
+#             return {"status": "error", "message": "Live bidding is not active for this tender."}
 
-        sq = frappe.new_doc("Supplier Quotation")
-        sq.request_for_quotation = rfq_id
-        sq.supplier = supplier_name
-        sq.transaction_date = frappe.utils.nowdate()
+#         sq = frappe.new_doc("Supplier Quotation")
+#         sq.request_for_quotation = rfq_id
+#         sq.supplier = supplier_name
+#         sq.transaction_date = frappe.utils.nowdate()
 
-        for item in rfq.items:
-            sq.append("items", {
-                "item_code": item.item_code,
-                "qty": item.qty,
-                "rate": amount,
-                "uom": item.uom,
-                "warehouse": item.warehouse
-            })
+#         for item in rfq.items:
+#             sq.append("items", {
+#                 "item_code": item.item_code,
+#                 "qty": item.qty,
+#                 "rate": amount,
+#                 "uom": item.uom,
+#                 "warehouse": item.warehouse
+#             })
 
-        sq.insert(ignore_permissions=True)
+#         sq.insert(ignore_permissions=True)
         
-        return {
-            "status": "success", 
-            "message": f"Bid placed successfully! Quotation {sq.name} created."
-        }
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Bid Placement Error")
-        return {"status": "error", "message": str(e)}
+#         return {
+#             "status": "success", 
+#             "message": f"Bid placed successfully! Quotation {sq.name} created."
+#         }
+#     except Exception as e:
+#         frappe.log_error(frappe.get_traceback(), "Bid Placement Error")
+#         return {"status": "error", "message": str(e)}
     
 @frappe.whitelist(allow_guest=True)
 def get_recent_bid_activity(rfq_id):
@@ -1127,13 +1112,21 @@ def place_supplier_bid(rfq_id, amount):
         
         sq.request_for_quotation = rfq_id 
         sq.supplier = supplier_name
+        sq.company = rfq.company
         sq.transaction_date = frappe.utils.nowdate()
+
+        sq.currency = "INR"
+        sq.conversion_rate = 1.0
+        sq.buying_price_list = "Standard Buying"
+
+        total_qty = sum([item.qty for item in rfq.items])
+        unit_rate = float(amount) / total_qty if total_qty > 0 else float(amount)
 
         for item in rfq.items:
             sq.append("items", {
                 "item_code": item.item_code,
                 "qty": item.qty,
-                "rate": amount,
+                "rate": unit_rate,
                 "uom": item.uom,
                 "warehouse": item.warehouse,
                 "request_for_quotation": rfq_id
