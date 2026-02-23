@@ -343,6 +343,7 @@ def get_dashboard_stats():
             
         # Get primary supplier name(s) for display
         display_supplier_name = ", ".join(supplier_names)
+        profile_data = get_supplier_profile()
         
         return {
             "stats": {
@@ -353,7 +354,8 @@ def get_dashboard_stats():
             },
             "recent_bids": recent_bids,
             "supplier_name": display_supplier_name,
-            "user_name": frappe.db.get_value("User", user, "full_name") or user
+            "user_name": frappe.db.get_value("User", user, "full_name") or user,
+            "profile": profile_data
         }
 
     except Exception as e:
@@ -812,7 +814,7 @@ def get_dashboard_stats():
     sq = frappe.qb.DocType("Supplier Quotation")
     total_bid_value = (
         frappe.qb.from_(sq)
-        .select(Sum(sq.total))
+        .select(Sum(sq.grand_total))
         .where(sq.supplier == supplier)
         .where(sq.docstatus == 1)
     ).run()[0][0] or 0
@@ -820,7 +822,7 @@ def get_dashboard_stats():
     po = frappe.qb.DocType("Purchase Order")
     orders_won_value = (
         frappe.qb.from_(po)
-        .select(Sum(po.total))
+        .select(Sum(po.grand_total))
         .where(po.supplier == supplier)
         .where(po.docstatus == 1)
     ).run()[0][0] or 0
@@ -1039,46 +1041,6 @@ def get_similar_tenders(category, exclude_id):
         limit=5
     )
 
-
-# @frappe.whitelist(allow_guest=True)
-# def place_supplier_bid(rfq_id, amount):
-#     try:
-#         supplier_name = frappe.db.get_value("Portal User", 
-#             {"user": frappe.session.user, "parenttype": "Supplier"}, 
-#             "parent")
-
-#         if not supplier_name:
-#             return {"status": "error", "message": "Your user account is not linked to a Supplier."}
-
-#         rfq = frappe.get_doc("Request for Quotation", rfq_id)
-        
-#         if not rfq.custom_enable_live_bidding:
-#             return {"status": "error", "message": "Live bidding is not active for this tender."}
-
-#         sq = frappe.new_doc("Supplier Quotation")
-#         sq.request_for_quotation = rfq_id
-#         sq.supplier = supplier_name
-#         sq.transaction_date = frappe.utils.nowdate()
-
-#         for item in rfq.items:
-#             sq.append("items", {
-#                 "item_code": item.item_code,
-#                 "qty": item.qty,
-#                 "rate": amount,
-#                 "uom": item.uom,
-#                 "warehouse": item.warehouse
-#             })
-
-#         sq.insert(ignore_permissions=True)
-        
-#         return {
-#             "status": "success", 
-#             "message": f"Bid placed successfully! Quotation {sq.name} created."
-#         }
-#     except Exception as e:
-#         frappe.log_error(frappe.get_traceback(), "Bid Placement Error")
-#         return {"status": "error", "message": str(e)}
-    
 @frappe.whitelist(allow_guest=True)
 def get_recent_bid_activity(rfq_id):
     bids = frappe.db.get_list("Supplier Quotation", 
@@ -1157,3 +1119,63 @@ def get_tender_summary_stats(rfq_id):
     return {
         "total_bids": total_bids
     }
+
+@frappe.whitelist(allow_guest=False)
+def get_supplier_profile():
+    user = frappe.session.user
+    
+    supplier_name = frappe.db.get_value("Portal User", 
+        {"user": user, "parenttype": "Supplier"}, "parent")
+    
+    if not supplier_name:
+        return {"error": True, "message": _("Supplier link not found.")}
+
+    supplier_doc = frappe.get_doc("Supplier", supplier_name)
+    product_categories = get_supplier_categories(supplier_name)
+
+    address = frappe.get_all("Address", 
+        filters={"link_doctype": "Supplier", "link_name": supplier_name},
+        fields=["address_line1", "address_line2", "city", "state", "pincode", "email_id", "phone"],
+        limit=1
+    )
+    
+    contact = frappe.get_all("Contact",
+        filters={"link_doctype": "Supplier", "link_name": supplier_name},
+        fields=["first_name", "last_name", "email_id", "mobile_no"],
+        limit=1
+    )
+
+    return {
+        "supplier_name": supplier_doc.supplier_name,
+        "business_type": supplier_doc.supplier_type,
+        "gst_number": supplier_doc.gstin or "", 
+        "pan_number": supplier_doc.pan or "", 
+        "country": supplier_doc.country,
+        "address": address[0] if address else {},
+        "contact": contact[0] if contact else {},
+        "member_since": supplier_doc.creation,
+        "product_categories": product_categories
+        }
+
+def get_supplier_categories(supplier_name):
+    if not supplier_name:
+        return []
+        
+    rfq_list = frappe.get_all("Request for Quotation Supplier", 
+        filters={"supplier": supplier_name, "docstatus": 1}, 
+        pluck="parent"
+    )
+
+    if not rfq_list:
+        return []
+
+    categories = frappe.get_all("Request for Quotation",
+        filters={
+            "name": ["in", rfq_list],
+            "custom_rfq_category": ["!=", ""],
+            "docstatus": 1
+        },
+        pluck="custom_rfq_category"
+    )
+    
+    return list(set(categories)) if categories else []

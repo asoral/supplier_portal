@@ -22,6 +22,7 @@ const dashboardData = ref({
         total_bid_value: "0.00",
         orders_won_value: "0.00",
     },
+    profile: null,
     recent_bids: [],
     recent_activity: [], 
     upcoming_deadlines: [],
@@ -29,16 +30,35 @@ const dashboardData = ref({
     user_name: '',
     isSessionExpired: false
 })
+const profileCompletion = computed(() => {
+    const p = dashboardData.value?.profile;
+    if (!p) return 0;
+    
+    const primaryAddr = p.__onload?.addr_list?.[0] || {};
+    const primaryContact = p.__onload?.contact_list?.[0] || {};
+
+    const fields = [
+        p.supplier_name,              // 1. Company Name (Found)
+        p.supplier_type,              // 2. Business Type (Found)
+        p.gstin,                      // 3. GST (Empty -> This is the missing 20%)
+        primaryContact.email_id,      // 4. Email (Nested in __onload)
+        primaryAddr.address_line1     // 5. Address (Nested in __onload)
+    ];
+
+    const filled = fields.filter(f => f && f !== '' && f !== 'Not Specified').length;
+    
+    return Math.round((filled / fields.length) * 100);
+});
 
 const bidHistory = computed(() => {
     return (dashboardData.value.recent_bids || []).map(bid => ({
-        id: bid.id,             // Python key: "id"
-        title: bid.title,       // Python key: "title"
-        amount: bid.amount,     // Python key: "amount" (already has ₹ and commas)
-        submitted: bid.date,    // Python key: "date"
-        rank: bid.rank || '-',  // Python key: "rank"
-        status: bid.status,     // Python key: "status"
-        statusColor: bid.statusColor // Python key: "statusColor" (already mapped in API)
+        id: bid.id,             
+        title: bid.title,       
+        amount: bid.amount,     
+        submitted: bid.date,    
+        rank: bid.rank || '-',  
+        status: bid.status,     
+        statusColor: bid.statusColor 
     }))
 })
 
@@ -61,36 +81,41 @@ const formatDate = (dateStr) => {
 
 const fetchDashboardStats = async () => {
     try {
-        const response = await authStore.secureFetch('/api/method/supplier_portal.api.get_dashboard_stats')
-        
-        if (!response.ok && (response.status === 403 || response.status === 401)) {
-           dashboardData.value.isSessionExpired = true
+        const [statsRes, profileRes] = await Promise.all([
+            authStore.secureFetch('/api/method/supplier_portal.api.get_dashboard_stats'),
+            authStore.secureFetch('/api/method/supplier_portal.api.get_supplier_profile')
+        ]);
+
+        if (!statsRes.ok && (statsRes.status === 403 || statsRes.status === 401)) {
+           dashboardData.value.isSessionExpired = true;
            return;
         }
 
-        const result = await response.json()
-        if (result.message) {
+        const statsResult = await statsRes.json();
+        const profileResult = await profileRes.json();
+
+        if (statsResult.message) {
             dashboardData.value = {
-               ...result.message,
-               upcoming_deadlines: result.message.upcoming_deadlines || []
+               ...statsResult.message,
+               profile: profileResult.message || null,
+               upcoming_deadlines: statsResult.message.upcoming_deadlines || []
             };
             
-            const s = result.message.stats;
-            stats.value[0].value = s.total_bids
-            stats.value[1].value = s.orders_won
-            stats.value[0].value = `₹${s.total_bid_value}`;
-            stats.value[1].value = `₹${s.orders_won_value}`;
-            stats.value[2].value = s.pending_review
-            stats.value[3].value = s.win_rate
+            const s = statsResult.message.stats;
+            
+            stats.value[0].value = s.total_bids || 0;
+            stats.value[1].value = s.orders_won || 0;
+            stats.value[2].value = s.pending_review || 0;
+            stats.value[3].value = s.win_rate || '0%';
 
-            console.log("Mapped Deadlines:", dashboardData.value.upcoming_deadlines);
+            console.log("Dashboard Data Synced with Profile Info");
         }
     } catch (e) {
-        console.error("Dashboard Sync Error:", e)
+        console.error("Dashboard Sync Error:", e);
     } finally {
-        isLoading.value = false
+        isLoading.value = false;
     }
-}
+};
 
 const getActivityStyle = (operation) => {
     const map = {
@@ -304,23 +329,27 @@ onMounted(async () => {
          <div class="space-y-8">
             <!-- Profile Strength -->
             <div class="bg-white rounded-xl p-6 shadow-sm ring-1 ring-gray-900/5">
-               <h3 class="font-semibold text-gray-900 mb-4">Profile Strength</h3>
-               <div class="flex items-center gap-6">
-                  <div class="relative h-20 w-20 flex-shrink-0">
-                     <svg class="h-full w-full -rotate-90 transform" viewBox="0 0 36 36">
-                        <path class="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" />
-                        <path class="text-indigo-600" :stroke-dasharray="`${profileCompletion}, 100`" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" />
-                     </svg>
-                     <div class="absolute inset-0 flex items-center justify-center flex-col">
-                        <span class="text-sm font-bold text-gray-900">{{ profileCompletion }}%</span>
-                     </div>
-                  </div>
-                  <div>
-                     <p class="text-sm text-gray-600 mb-2">Complete your profile to increase visibility</p>
-                     <a href="#" class="text-sm font-semibold text-indigo-600 hover:text-indigo-500">Complete Now →</a>
-                  </div>
-               </div>
-            </div>
+   <h3 class="font-semibold text-gray-900 mb-4">Profile Strength</h3>
+   <div class="flex items-center gap-6">
+      <div class="relative h-20 w-20 flex-shrink-0">
+         <svg class="h-full w-full -rotate-90 transform" viewBox="0 0 36 36">
+            <path class="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" />
+            <path 
+               class="text-indigo-600" 
+               :stroke-dasharray="`${profileCompletion}, 100`" 
+               d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+               fill="none" 
+               stroke="currentColor" 
+               stroke-width="4" 
+               stroke-linecap="round" 
+            />
+         </svg>
+         <div class="absolute inset-0 flex items-center justify-center flex-col">
+            <span class="text-sm font-bold text-gray-900">{{ profileCompletion }}%</span>
+         </div>
+      </div>
+      </div>
+</div>
 
            <!-- Recent Activity -->
          <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5">
@@ -517,23 +546,27 @@ onMounted(async () => {
          <div class="space-y-8">
             <!-- Profile Strength -->
             <div class="bg-white rounded-xl p-6 shadow-sm ring-1 ring-gray-900/5">
-               <h3 class="font-semibold text-gray-900 mb-4">Profile Strength</h3>
-               <div class="flex items-center gap-6">
-                  <div class="relative h-20 w-20 flex-shrink-0">
-                     <svg class="h-full w-full -rotate-90 transform" viewBox="0 0 36 36">
-                        <path class="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" />
-                        <path class="text-indigo-600" :stroke-dasharray="`${profileCompletion}, 100`" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" />
-                     </svg>
-                     <div class="absolute inset-0 flex items-center justify-center flex-col">
-                        <span class="text-sm font-bold text-gray-900">{{ profileCompletion }}%</span>
-                     </div>
-                  </div>
-                  <div>
-                     <p class="text-sm text-gray-600 mb-2">Complete your profile to increase visibility</p>
-                     <a href="#" class="text-sm font-semibold text-indigo-600 hover:text-indigo-500">Complete Now →</a>
-                  </div>
-               </div>
-            </div>
+   <h3 class="font-semibold text-gray-900 mb-4">Profile Strength</h3>
+   <div class="flex items-center gap-6">
+      <div class="relative h-20 w-20 flex-shrink-0">
+         <svg class="h-full w-full -rotate-90 transform" viewBox="0 0 36 36">
+            <path class="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" />
+            <path 
+               class="text-indigo-600" 
+               :stroke-dasharray="`${profileCompletion}, 100`" 
+               d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+               fill="none" 
+               stroke="currentColor" 
+               stroke-width="4" 
+               stroke-linecap="round" 
+            />
+         </svg>
+         <div class="absolute inset-0 flex items-center justify-center flex-col">
+            <span class="text-sm font-bold text-gray-900">{{ profileCompletion }}%</span>
+         </div>
+      </div>
+      </div>
+</div>
 
             <!-- Recent Activity -->
             <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5">
