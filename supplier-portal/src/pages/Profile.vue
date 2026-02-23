@@ -1,77 +1,151 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import {
-  Building2,
-  FileText,
-  Award,
-  Settings,
-  MapPin,
-  Calendar,
-  CheckCircle,
-  Star,
-  Edit2,
-  Download,
-  Upload,
-  Shield,
-  Bell,
-  Lock,
-  Trash2,
-  ShoppingBag,
-  TrendingUp,
-  FileCheck
+  Building2, FileText, Award, Settings, MapPin, Calendar, CheckCircle,
+  Star, Edit2, Download, Upload, Shield, Bell, Lock, Trash2,
+  ShoppingBag, TrendingUp, FileCheck
 } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 
 const authStore = useAuthStore()
-const state = authStore
 const activeTab = ref('Company')
 const tabs = ['Company', 'Documents', 'Certifications', 'Settings']
+const isLoading = ref(true)
 
-// Mock Data
-const profileParams = {
-  completion: 85,
-  rating: 4.5,
-  reviews: 24,
-  joinedDate: '15 Jun 2022',
-  location: 'Pune, Maharashtra',
-  industry: 'Manufacturing & Trading',
-  verified: true
-}
+// 1. Profile Data State (to be filled from Backend)
+const profileData = ref(null)
 
-const quickStats = {
-  totalBids: 6,
-  ordersWon: 2,
-  winRate: '33%',
-  totalValue: '₹10,70,000'
-}
-
-// Form Data (pre-filled with mock or auth data)
-const formData = ref({
-  companyName: state.user?.company || 'ABC Industries Pvt Ltd',
-  businessType: 'Manufacturing & Trading',
-  gst: '27AABCU9603R1ZM',
-  pan: 'AABCU9603R',
-  contactEmail: state.user?.email || 'vendor@example.com',
-  contactPhone: '+91 98765 43210',
-  website: 'https://abcindustries.com',
-  address: 'Plot 42, Industrial Area, Pune-2',
-  about: 'ABC Industries is a leading supplier of industrial raw materials and safety equipment with over 15 years of experience in serving manufacturing companies across India.',
-  employees: '50-100',
-  turnover: '₹5-10 Cr'
+// --- ADD THIS SECTION ---
+const dashboardData = ref({
+    stats: {
+        total_bids: 0,
+        orders_won: 0,
+        win_rate: '0%',
+        orders_won_value: '0.00'
+    }
 })
+// 2. Form Data (now computed or reactive to profileData)
+const formData = ref({
+  companyName: '',
+  businessType: '',
+  gst: '',
+  pan: '',
+  contactEmail: '',
+  contactPhone: '',
+  website: '',
+  address: '',
+  about: '',
+  employees: '',
+  turnover: '',
+  productCategories: []
+})
+
+const profileParams = computed(() => ({
+  completion: profileCompletion.value,
+  rating: 4.5, 
+  joinedDate: (profileData.value && profileData.value.member_since) 
+    ? new Date(profileData.value.member_since.replace(' ', 'T')).toLocaleDateString('en-IN', { 
+        day: '2-digit', month: 'short', year: 'numeric' 
+      }) 
+    : '...', 
+  // Get city from profileData address if it exists
+  location: profileData.value?.address?.city || 'Location not set',
+  industry: formData.value.businessType || 'Company',
+  verified: true
+}))
+
+const memberSince = computed(() => {
+    const rawDate = dashboardData.value.profile?.creation;
+    if (!rawDate) return '...';
+    
+    // Fixes the "Invalid Date" error by converting to ISO format
+    return new Date(rawDate.replace(' ', 'T')).toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+    });
+});
+
+// Inside Profile.vue <script setup>
+const isEditing = ref(false)
+
+const toggleEdit = () => {
+  if (isEditing.value) {
+    // Logic to save data would go here
+    saveProfileData() 
+  }
+  isEditing.value = !isEditing.value
+}
+
+const saveProfileData = async () => {
+    // You can implement the API call to update the supplier record here later
+    console.log("Saving data...", formData.value)
+}
+
+const fetchProfileData = async () => {
+  isLoading.value = true
+  try {
+    const response = await authStore.secureFetch('/api/method/supplier_portal.api.get_supplier_profile')
+    const result = await response.json()
+    
+    if (result.message) {
+      const m = result.message
+      profileData.value = m // Set this first
+      
+      // Update the entire object at once to prevent data loss
+      formData.value = {
+        companyName: m.supplier_name || '',
+        businessType: m.business_type || '',
+        gst: m.gst_number || '', // Note: Python function returned 'gst_number'
+        pan: m.pan_number || '',  // Note: Python function returned 'pan_number'
+        contactEmail: m.contact?.email_id || '',
+        contactPhone: m.contact?.mobile_no || '',
+        website: m.website || '',
+        address: m.address?.address_line1 ? `${m.address.address_line1}, ${m.address.city}` : '',
+        about: m.about_company || '',
+        employees: m.employee_count || 'Not Specified',
+        turnover: m.annual_turnover || 'Not Specified',
+        // ADDED HERE: This prevents the 'blank page' crash
+        productCategories: m.product_categories ?? []
+      }
+    }
+    
+    const statsResponse = await authStore.secureFetch('/api/method/supplier_portal.api.get_dashboard_stats')
+    const statsResult = await statsResponse.json()
+    if (statsResult.message) {
+        dashboardData.value = statsResult.message
+    }
+  } catch (e) {
+    console.error("Profile Fetch Error:", e)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const profileCompletion = computed(() => {
+    if (!profileData.value) return 0;
+    
+    // Use the mapped formData values instead of raw profileData
+    // because formData already handled the nesting logic
+    const fields = [
+        formData.value.companyName,
+        formData.value.businessType,
+        formData.value.address,
+        formData.value.contactEmail,
+        formData.value.gst
+    ];
+    
+    const filled = fields.filter(f => f && f !== '' && f !== 'Not Specified').length;
+    return Math.round((filled / fields.length) * 100);
+});
 
 const documents = ref([
   { name: 'Company Registration Certificate', date: '15 Jan 2024', type: 'pdf' },
-  { name: 'GST Certificate', date: '15 Jan 2024', type: 'pdf' },
-  { name: 'PAN Card', date: '15 Jan 2024', type: 'pdf' },
-  { name: 'Bank Details', date: '10 Feb 2024', type: 'pdf' },
-  { name: 'Product Catalog', date: '5 Mar 2024', type: 'pdf' }
+  { name: 'GST Certificate', date: '15 Jan 2024', type: 'pdf' }
 ])
 
 const certifications = ref([
   { name: 'ISO 9001:2015', validUntil: '15 Dec 2025', status: 'Active' },
-  { name: 'ISO 14001:2015', validUntil: '20 Aug 2025', status: 'Active' },
-  { name: 'MSME Certified', validUntil: '10 Mar 2028', status: 'Active' },
   { name: 'GST Registered', validUntil: '', status: 'Active' },
 ])
 
@@ -82,6 +156,8 @@ const settings = ref({
   orderUpdates: false,
   weeklyDigest: false
 })
+
+onMounted(fetchProfileData)
 </script>
 
 <template>
@@ -95,7 +171,7 @@ const settings = ref({
           <span class="text-3xl font-bold text-white uppercase">{{ formData.companyName.charAt(0) }}</span>
         </div>
         
-        <div class="flex-grow">
+       <div class="flex-grow">
           <div class="flex flex-col md:flex-row md:items-center gap-3 mb-2">
             <h1 class="text-2xl font-bold text-gray-900">{{ formData.companyName }}</h1>
             <span v-if="profileParams.verified" class="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
@@ -107,15 +183,24 @@ const settings = ref({
           
           <div class="flex flex-wrap gap-4 text-sm text-gray-500">
              <span class="flex items-center gap-1"><MapPin class="h-4 w-4" /> {{ profileParams.location }}</span>
-             <span class="flex items-center gap-1"><Calendar class="h-4 w-4" /> Member since {{ profileParams.joinedDate }}</span>
+             <span class="flex items-center gap-1"><Calendar class="h-4 w-4" /> Member since {{memberSince}}</span>
           </div>
         </div>
         
         <div>
-           <button class="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 bg-white shadow-sm">
-              <Edit2 class="h-4 w-4" /> Edit Profile
-           </button>
-        </div>
+   <button 
+      @click="isEditing = !isEditing"
+      :class="[
+        isEditing 
+          ? 'bg-green-600 text-white border-green-600 hover:bg-green-700' 
+          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+      ]"
+      class="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium shadow-sm transition-all"
+   >
+      <component :is="isEditing ? CheckCircle : Edit2" class="h-4 w-4" />
+      {{ isEditing ? 'Save Changes' : 'Edit Profile' }}
+   </button>
+</div>
       </div>
     </div>
 
@@ -209,7 +294,7 @@ const settings = ref({
                      </div>
                      <span class="text-sm text-gray-600">Total Bids</span>
                   </div>
-                  <span class="text-sm font-bold text-gray-900">{{ quickStats.totalBids }}</span>
+                  <span class="text-sm font-bold text-gray-900">{{ dashboardData.stats?.total_bids || 0 }}</span>
                </div>
                <div class="flex items-center justify-between">
                   <div class="flex items-center gap-3">
@@ -218,7 +303,7 @@ const settings = ref({
                      </div>
                      <span class="text-sm text-gray-600">Orders Won</span>
                   </div>
-                  <span class="text-sm font-bold text-green-600">{{ quickStats.ordersWon }}</span>
+                  <span class="text-sm font-bold text-green-600">{{ dashboardData.stats?.orders_won || 0 }}</span>
                </div>
                <div class="flex items-center justify-between">
                   <div class="flex items-center gap-3">
@@ -227,7 +312,7 @@ const settings = ref({
                      </div>
                      <span class="text-sm text-gray-600">Win Rate</span>
                   </div>
-                  <span class="text-sm font-bold text-gray-900">{{ quickStats.winRate }}</span>
+                  <span class="text-sm font-bold text-gray-900">{{ dashboardData.stats?.win_rate || '0%' }}</span>
                </div>
                <div class="pt-3 border-t border-gray-100 flex items-center justify-between">
                   <div class="flex items-center gap-3">
@@ -236,7 +321,7 @@ const settings = ref({
                      </div>
                      <span class="text-xs text-gray-600">Total Value Won</span>
                   </div>
-                  <span class="text-sm font-bold text-gray-900">{{ quickStats.totalValue }}</span>
+                  <span class="text-sm font-bold text-gray-900">₹{{ dashboardData.stats?.orders_won_value || '0.00' }}</span>
                </div>
             </div>
          </div>
@@ -269,65 +354,73 @@ const settings = ref({
                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                      <label class="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
-                     <input type="text" v-model="formData.companyName" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-200 bg-gray-50 sm:text-sm sm:leading-6" disabled />
+                     <input type="text" v-model="formData.companyName" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all" />
                   </div>
                   <div>
                      <label class="block text-sm font-medium text-gray-700 mb-1">Business Type</label>
-                     <input type="text" v-model="formData.businessType" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" />
+                     <input type="text" v-model="formData.businessType" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all" />
                   </div>
                   <div>
                      <label class="block text-sm font-medium text-gray-700 mb-1">GST Number</label>
-                     <input type="text" v-model="formData.gst" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" />
+                     <input type="text" v-model="formData.gst" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all" />
                   </div>
-                   <div>
+                  <div>
                      <label class="block text-sm font-medium text-gray-700 mb-1">PAN Number</label>
-                     <input type="text" v-model="formData.pan" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" />
+                     <input type="text" v-model="formData.pan" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all" />
                   </div>
                </div>
                
                <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">About Company</label>
-                  <textarea rows="3" v-model="formData.about" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"></textarea>
+                  <textarea rows="3" v-model="formData.about" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all"></textarea>
                </div>
                
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                      <label class="block text-sm font-medium text-gray-700 mb-1">Annual Turnover</label>
-                     <input type="text" v-model="formData.turnover" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" />
+                     <input type="text" v-model="formData.turnover" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all" />
                   </div>
                   <div>
                      <label class="block text-sm font-medium text-gray-700 mb-1">Employee Count</label>
-                     <input type="text" v-model="formData.employees" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" />
+                     <input type="text" v-model="formData.employees" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all" />
                   </div>
                 </div>
 
                <div class="border-t border-gray-100 pt-6">
                   <h4 class="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2"><User class="h-4 w-4 text-gray-400" /> Contact Information</h4>
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                     <div>
+                    <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                        <input type="email" v-model="formData.contactEmail" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" />
+                        <input type="email" v-model="formData.contactEmail" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all" />
                      </div>
                      <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                        <input type="text" v-model="formData.contactPhone" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" />
+                        <input type="text" v-model="formData.contactPhone" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all" />
                      </div>
                      <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Website</label>
-                        <input type="text" v-model="formData.website" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" />
+                        <input type="text" v-model="formData.website" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all" />
                      </div>
                      <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                        <input type="text" disabled :value="profileParams.location" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-200 bg-gray-50 sm:text-sm sm:leading-6" />
-                     </div>
+                        <input type="text" v-model="profileParams.location" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all"/>
                      <div class="md:col-span-2">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Full Address</label>
-                        <textarea rows="2" v-model="formData.address" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"></textarea>
+                        <textarea rows="2" v-model="formData.address" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all"></textarea>
+                     </div>
                      </div>
                   </div>
                </div>
-
             </form>
+            <div class="bg-white p-6 rounded-xl border border-gray-200 mt-6">
+               <h3 class="text-sm font-bold text-gray-900 mb-4">Product Categories</h3>
+               <div class="flex flex-wrap gap-2">
+                  <span v-for="cat in formData.productCategories" :key="cat" 
+                        class="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-medium border border-gray-200">
+                     {{ cat }}
+                  </span>
+               </div>
+            </div>
          </div>
 
          <!-- Documents Tab -->
