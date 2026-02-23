@@ -35,39 +35,44 @@ const isLoading = ref(true)
 const fetchTenders = async () => {
   isLoading.value = true
   try {
+    // 1. Construct parameters properly
     const params = new URLSearchParams({ 
       limit: 20,
-      priority: selectedPriority.value // This sends 'Urgent', 'High', etc.
+      offset: 0, // Always good to be explicit
+      priority: selectedPriority.value 
     })
-    const response = await authStore.secureFetch('/api/method/supplier_portal.api.get_active_tenders?' + new URLSearchParams({
-       limit: 20
-     }))
 
-    // Check for session expiry
-    if (!response.ok && (response.status === 403 || response.status === 401)) {
-        isSessionExpired.value = true;
-        throw new Error("Session Expired");
+    // 2. Use the interpolated string correctly
+    const response = await authStore.secureFetch(`/api/method/supplier_portal.api.get_active_tenders?${params.toString()}`)
+
+    if (!response.ok) {
+        if (response.status === 403 || response.status === 401) {
+            isSessionExpired.value = true;
+            throw new Error("Session Expired");
+        }
+        throw new Error(`HTTP Error: ${response.status}`);
     }
 
     const result = await response.json()
     const data = result.message || []
     
-   tenders.value = data.map(rfq => ({
+    // 3. Map the data (Your mapping logic is solid)
+    tenders.value = data.map(rfq => ({
       id: rfq.name,                               
-      title: rfq.custom_rfq_subject,               
+      title: rfq.custom_rfq_subject || rfq.name,               
       description: rfq.custom_rfq_description ? rfq.custom_rfq_description.replace(/<[^>]*>?/gm, '') : '', 
       category: rfq.custom_rfq_category,        
       status: rfq.custom_bid_status,             
-      budget: rfq.custom_total_budget_,               
+      budget: parseFloat(rfq.custom_total_budget_) || 0, // Ensure this is a number for the slider
       deadline: rfq.custom_bid_submission_last_date,             
       publishedDate: rfq.custom_publish_date,
       priority: rfq.custom_priority,
-      // Check for live bidding enablement
-      liveBidding: rfq.custom_bid_status === 'Active' && rfq.custom_enable_live_bidding
+      liveBidding: rfq.custom_bid_status === 'Active' && !!rfq.custom_enable_live_bidding
     }))
-  }catch (error) {
+  } catch (error) {
     console.error("Failed to load tenders:", error)
-  }finally {
+    tenders.value = [] // Clear list on error to avoid stale data
+  } finally {
     isLoading.value = false
   }
 }
