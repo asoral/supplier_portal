@@ -3,7 +3,7 @@ from frappe import _
 
 def update_delivery_percent(doc,method):
     if not doc.items:
-        doc.custom_total_blanket_quantity = 0
+        doc.custom_total_blanket_qty = 0
         doc.total = 0
         return
 
@@ -21,7 +21,7 @@ def update_delivery_percent(doc,method):
 
         total_amount += amount
 
-    doc.custom_total_blanket_quantity = total_blanket_qty
+    doc.custom_total_blanket_qty = total_blanket_qty
     doc.custom_total_inr = total_amount
 
 def recalculate_blanket_order_total(blanket_order):
@@ -48,7 +48,7 @@ def recalculate_blanket_order_total(blanket_order):
         "Blanket Order",
         blanket_order,
         {
-            "custom_total_ordered_quantity": total_ordered_qty,
+            "custom_total_orderd_qty": total_ordered_qty,
             "custom_delivery_": delivery_percent
         }
     )
