@@ -31,24 +31,67 @@ const liveBiddingOnly = ref(false)
 
 const tenders = ref([])
 const isLoading = ref(true)
+const totalSavedCount = ref(0)
+
+const fetchTotalSavedCount = async () => {
+  if (!authStore.isAuthenticated) return;
+  try {
+    const response = await authStore.secureFetch('/api/method/supplier_portal.api.count_saved_tenders');
+    const result = await response.json();
+    
+    if (result.message !== undefined) {
+      totalSavedCount.value = result.message;
+    }
+  } catch (error) {
+    console.error("Error updating saved count:", error);
+  }
+}
+
+const getPriorityActiveClasses = (priority) => {
+   const mapping = {
+      'Urgent': 'bg-red-50 text-red-700 border-red-200 ring-1 ring-red-200',
+      'High': 'bg-orange-50 text-orange-700 border-orange-200 ring-1 ring-orange-200',
+      'Normal': 'bg-blue-50 text-blue-700 border-blue-200 ring-1 ring-blue-200',
+      'Low': 'bg-gray-50 text-gray-700 border-gray-200 ring-1 ring-gray-200',
+      'All': 'bg-indigo-50 text-indigo-700 border-indigo-200 ring-1 ring-indigo-200'
+   }
+   return mapping[priority] || mapping['All']
+}
+
+const getPriorityDotClass = (priority) => {
+   const mapping = {
+      'Urgent': 'bg-red-500',
+      'High': 'bg-orange-500',
+      'Normal': 'bg-blue-500',
+      'Low': 'bg-gray-400'
+   }
+   return mapping[priority] || 'bg-transparent'
+}
 
 const fetchTenders = async () => {
   isLoading.value = true
   try {
-    // 1. Construct parameters properly
-    const params = new URLSearchParams({ 
+    // 1. Define the plain object first
+    const queryArgs = { 
       limit: 20,
-      offset: 0, // Always good to be explicit
-      priority: selectedPriority.value 
-    })
+      offset: 0 
+    }
 
-    // 2. Use the interpolated string correctly
+    // 2. Add priority only if it's not 'All'
+    if (selectedPriority.value !== 'All') {
+      queryArgs.priority = selectedPriority.value
+    }
+
+    // 3. Convert the object to Search Params
+    const params = new URLSearchParams(queryArgs)
+
+    // 4. Use the params in the fetch call
     const response = await authStore.secureFetch(`/api/method/supplier_portal.api.get_active_tenders?${params.toString()}`)
 
     if (!response.ok) {
         if (response.status === 403 || response.status === 401) {
             isSessionExpired.value = true;
-            throw new Error("Session Expired");
+            return;
         }
         throw new Error(`HTTP Error: ${response.status}`);
     }
@@ -56,14 +99,13 @@ const fetchTenders = async () => {
     const result = await response.json()
     const data = result.message || []
     
-    // 3. Map the data (Your mapping logic is solid)
     tenders.value = data.map(rfq => ({
       id: rfq.name,                               
       title: rfq.custom_rfq_subject || rfq.name,               
       description: rfq.custom_rfq_description ? rfq.custom_rfq_description.replace(/<[^>]*>?/gm, '') : '', 
       category: rfq.custom_rfq_category,        
       status: rfq.custom_bid_status,             
-      budget: parseFloat(rfq.custom_total_budget_) || 0, // Ensure this is a number for the slider
+      budget: parseFloat(rfq.custom_total_budget_) || 0, 
       deadline: rfq.custom_bid_submission_last_date,             
       publishedDate: rfq.custom_publish_date,
       priority: rfq.custom_priority,
@@ -71,14 +113,19 @@ const fetchTenders = async () => {
     }))
   } catch (error) {
     console.error("Failed to load tenders:", error)
-    tenders.value = [] // Clear list on error to avoid stale data
+    tenders.value = [] 
   } finally {
     isLoading.value = false
   }
 }
 
+watch([selectedPriority, selectedCategory], () => {
+  fetchTenders();
+})
+
 onMounted(() => {
    fetchTenders();
+   fetchTotalSavedCount();
    if (route.query.category) {
       selectedCategory.value = route.query.category
    }
@@ -117,13 +164,11 @@ const filteredTenders = computed(() => {
   let result = tenders.value.filter(tender => {
     const matchesSearch = tender.title.toLowerCase().includes(searchQuery.value.toLowerCase()) || 
                           tender.id.toLowerCase().includes(searchQuery.value.toLowerCase())
-    const matchesCategory = selectedCategory.value === 'All' || tender.category === selectedCategory.value
     const matchesStatus = selectedStatus.value === 'All' || tender.status === selectedStatus.value
-    const matchesPriority = selectedPriority.value === 'All' || tender.priority === selectedPriority.value
     const matchesBudget = tender.budget <= priceRange.value
     const matchesLive = !liveBiddingOnly.value || tender.liveBidding
     
-    return matchesSearch && matchesCategory && matchesStatus && matchesPriority && matchesBudget && matchesLive
+    return matchesSearch && matchesStatus && matchesBudget && matchesLive
   })
 
   // Sorting
@@ -153,7 +198,6 @@ const clearFilters = () => {
    liveBiddingOnly.value = false
    searchQuery.value = ''
    priceRange.value = 20000000
-   sortBy.value = 'Deadline (Soonest)'
 }
 </script>
 
@@ -166,8 +210,12 @@ const clearFilters = () => {
         <p class="mt-1 text-sm text-gray-500">{{ filteredTenders.length }} active tenders • 1 closing soon</p>
       </div>
       <div class="mt-4 md:mt-0 flex gap-3">
-         <button class="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
-            <Bookmark class="h-4 w-4" /> Saved (0)
+         <button 
+            @click="router.push('/saved-tenders')"
+            class="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 transition-all active:scale-95"
+            >
+            <Bookmark class="h-4 w-4" /> 
+            <span>Saved ({{ totalSavedCount }})</span>
          </button>
          <button class="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
             <Bell class="h-4 w-4" /> Set Alert
@@ -220,20 +268,29 @@ const clearFilters = () => {
          <div class="border-t border-gray-200 my-4"></div>
 
          <!-- Priority Filter -->
-         <div>
-            <h4 class="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-3">Priority</h4>
-            <div class="flex flex-wrap gap-2">
-               <button 
-                  v-for="priority in priorities" 
-                  :key="priority"
-                  @click="selectedPriority = priority"
-                  class="rounded-md px-3 py-1 text-xs font-medium border transition-colors"
-                  :class="selectedPriority === priority ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'"
-               >
-                  {{ priority }}
-               </button>
-            </div>
-         </div>
+        <div>
+   <h4 class="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-3">Priority</h4>
+   <div class="flex flex-wrap gap-2">
+      <button 
+         v-for="priority in priorities" 
+         :key="priority"
+         @click="selectedPriority = priority"
+         class="rounded-md px-3 py-1.5 text-xs font-medium border transition-all duration-200 flex items-center gap-2"
+         :class="[
+            selectedPriority === priority 
+               ? getPriorityActiveClasses(priority) 
+               : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:text-indigo-600'
+         ]"
+      >
+         <span 
+            v-if="priority !== 'All'"
+            class="h-1.5 w-1.5 rounded-full" 
+            :class="getPriorityDotClass(priority)"
+         ></span>
+         {{ priority }}
+      </button>
+   </div>
+</div>
 
          <div class="border-t border-gray-200 my-4"></div>
 
@@ -315,26 +372,54 @@ const clearFilters = () => {
          </div>
 
          <!-- Active Filters Chips -->
-         <div v-if="selectedCategory !== 'All' || selectedStatus !== 'All' || selectedPriority !== 'All' || priceRange < 20000000 || liveBiddingOnly" class="flex items-center gap-2 mb-6 text-sm flex-wrap">
-            <span class="text-gray-500">Active filters:</span>
-            <span v-if="selectedCategory !== 'All'" class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
-               {{ selectedCategory }} <button @click="selectedCategory = 'All'" class="hover:text-indigo-900"><X class="h-3 w-3" /></button>
-            </span>
-             <span v-if="selectedStatus !== 'All'" class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
-               {{ selectedStatus }} <button @click="selectedStatus = 'All'" class="hover:text-indigo-900"><X class="h-3 w-3" /></button>
-            </span>
-             <span v-if="selectedPriority !== 'All'" class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
-               {{ selectedPriority }} <button @click="selectedPriority = 'All'" class="hover:text-indigo-900"><X class="h-3 w-3" /></button>
-            </span>
-             <span v-if="priceRange < 20000000" class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
-               < ₹{{ (priceRange/100000).toFixed(1) }}L <button @click="priceRange = 20000000" class="hover:text-indigo-900"><X class="h-3 w-3" /></button>
-            </span>
-             <span v-if="liveBiddingOnly" class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
-               Live Bidding <button @click="liveBiddingOnly = false" class="hover:text-indigo-900"><X class="h-3 w-3" /></button>
-            </span>
-            <button @click="clearFilters" class="text-xs text-gray-500 hover:text-gray-900 underline">Clear all</button>
-         </div>
+         <div v-if="selectedCategory !== 'All' || selectedStatus !== 'All' || selectedPriority !== 'All' || priceRange < 20000000 || liveBiddingOnly" 
+     class="flex items-center gap-2 mb-6 text-sm flex-wrap">
+    
+    <span class="text-gray-500 font-medium">Active filters:</span>
 
+    <span v-if="selectedCategory !== 'All'" class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
+        {{ selectedCategory }} 
+        <button @click="selectedCategory = 'All'" class="hover:bg-indigo-200 rounded-full p-0.5 transition-colors">
+            <X class="h-3 w-3" />
+        </button>
+    </span>
+
+    <span v-if="selectedStatus !== 'All'" class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
+        {{ selectedStatus }} 
+        <button @click="selectedStatus = 'All'" class="hover:bg-blue-200 rounded-full p-0.5 transition-colors">
+            <X class="h-3 w-3" />
+        </button>
+    </span>
+
+    <span v-if="selectedPriority !== 'All'" 
+          :class="[
+            'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
+            selectedPriority === 'Urgent' ? 'bg-red-50 text-red-700 ring-red-700/10' : 'bg-orange-50 text-orange-700 ring-orange-700/10'
+          ]">
+        {{ selectedPriority }}
+        <button @click="selectedPriority = 'All'" class="hover:opacity-70 transition-opacity">
+            <X class="h-3 w-3" />
+        </button>
+    </span>
+
+    <span v-if="priceRange < 20000000" class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-700/10">
+        &lt; ₹{{ (priceRange/100000).toFixed(1) }}L 
+        <button @click="priceRange = 20000000" class="hover:bg-emerald-200 rounded-full p-0.5 transition-colors">
+            <X class="h-3 w-3" />
+        </button>
+    </span>
+
+    <span v-if="liveBiddingOnly" class="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10">
+        Live Bidding 
+        <button @click="liveBiddingOnly = false" class="hover:bg-purple-200 rounded-full p-0.5 transition-colors">
+            <X class="h-3 w-3" />
+        </button>
+    </span>
+
+    <button @click="clearFilters" class="text-xs text-gray-400 hover:text-gray-900 underline transition-colors font-medium">
+        Clear all
+    </button>
+</div>
          <!-- Tender Grid -->
          <div class="mb-4">
             <p class="text-sm text-gray-500">Showing {{ filteredTenders.length }} of {{ tenders.length }} tenders</p>
