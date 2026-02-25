@@ -214,387 +214,218 @@ onMounted(async () => {
 
     <!-- Main Content -->
     <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+  
+  <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+    <div v-for="item in stats" :key="item.name" class="overflow-hidden rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 transition-all hover:shadow-md">
+      <div class="flex items-center justify-between">
+        <div>
+          <dt class="truncate text-sm font-medium text-gray-500">{{ item.name }}</dt>
+          <dd class="mt-2 text-3xl font-semibold tracking-tight text-gray-900">{{ item.value }}</dd>
+        </div>
+        <div class="p-3 bg-gray-50 rounded-lg">
+          <component :is="item.icon" class="h-6 w-6 text-indigo-600" />
+        </div>
+      </div>
+      <div class="mt-4 flex items-center text-sm">
+        <span :class="[item.changeType === 'increase' ? 'text-green-600' : 'text-red-600', 'font-medium flex items-center']">
+          {{ item.changeType === 'increase' ? '↑' : '↓' }} {{ item.change }}
+        </span>
+        <span class="ml-2 text-gray-400">vs last month</span>
+      </div>
+    </div>
+  </div>
+
+<div class="flex mb-8">
+  <nav class="flex p-1 space-x-1 bg-gray-100/80 rounded-xl w-full max-w-3xl shadow-sm" aria-label="Tabs">
+    <button 
+      v-for="tab in ['Overview', 'My Bids', 'Analytics']" 
+      :key="tab"
+      @click="activeTab = tab"
+      :class="[
+        activeTab === tab 
+          ? 'bg-white text-indigo-600 shadow-sm' 
+          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50',
+        'flex-1 px-8 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200'
+      ]"
+    >
+      {{ tab }}
+    </button>
+  </nav>
+</div>
+
+ <div class="grid grid-cols-1 gap-8 lg:grid-cols-3 items-start">
+  
+  <div class="lg:col-span-2 space-y-8">
       
-      <!-- Stats -->
-      <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-        <div v-for="item in stats" :key="item.name" class="overflow-hidden rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 transition-all hover:shadow-md">
-          <div class="flex items-center justify-between">
-             <div>
-                <dt class="truncate text-sm font-medium text-gray-500">{{ item.name }}</dt>
-                <dd class="mt-2 text-3xl font-semibold tracking-tight text-gray-900">{{ item.value }}</dd>
-             </div>
-             <div class="p-3 bg-gray-50 rounded-lg">
-                <component :is="item.icon" class="h-6 w-6 text-indigo-600" />
-             </div>
-          </div>
-          <div class="mt-4 flex items-center text-sm">
-             <span :class="[
-                item.changeType === 'increase' ? 'text-green-600' : 'text-red-600',
-                'font-medium flex items-center'
-             ]">
-                {{ item.changeType === 'increase' ? '↑' : '↓' }} {{ item.change }}
-             </span>
-             <span class="ml-2 text-gray-400">vs last month</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tabs (Visual Only for now) -->
-      <div class="border-b border-gray-200 mb-8">
-        <nav class="-mb-px flex space-x-8" aria-label="Tabs">
-          <a href="#" @click.prevent="activeTab = 'Overview'" :class="[activeTab === 'Overview' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700', 'whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium']" aria-current="page">Overview</a>
-          <a href="#" @click.prevent="activeTab = 'My Bids'" :class="[activeTab === 'My Bids' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700', 'whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium']">My Bids</a>
-          <a href="#" @click.prevent="activeTab = 'Analytics'" :class="[activeTab === 'Analytics' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700', 'whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium']">Analytics</a>
-        </nav>
-      </div>
-
-      <!-- Overview View -->
-      <div v-if="activeTab === 'Overview'" class="grid grid-cols-1 gap-8 lg:grid-cols-3">
-        <!-- Left Column -->
-        <div class="lg:col-span-2 space-y-8">
-           <!-- Value Cards -->
-           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div class="bg-white rounded-xl p-6 shadow-sm ring-1 ring-gray-900/5">
-                 <div class="flex items-center gap-4">
-                    <div class="h-10 w-10 rounded-full bg-blue-50 flex items-center justify-center">
-                       <span class="text-blue-600 font-bold">₹</span>
-                    </div>
-                    <div>
-                       <p class="text-sm font-medium text-gray-500">Total Bid Value</p>
-                       <p class="text-xl font-bold text-gray-900">₹{{ dashboardData.stats.total_bid_value }}</p>
-                    </div>
-                 </div>
+      <div v-if="activeTab === 'Overview'" class="space-y-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="bg-white rounded-xl p-6 shadow-sm ring-1 ring-gray-900/5">
+            <div class="flex items-center gap-4">
+              <div class="h-10 w-10 rounded-full bg-blue-50 flex items-center justify-center"><span class="text-blue-600 font-bold">₹</span></div>
+              <div>
+                <p class="text-sm font-medium text-gray-500">Total Bid Value</p>
+                <p class="text-xl font-bold text-gray-900">₹{{ dashboardData.stats.total_bid_value }}</p>
               </div>
-              <div class="bg-white rounded-xl p-6 shadow-sm ring-1 ring-gray-900/5">
-                 <div class="flex items-center gap-4">
-                    <div class="h-10 w-10 rounded-full bg-green-50 flex items-center justify-center">
-                       <Trophy class="h-5 w-5 text-green-600" />
-                    </div>
-                    <div>
-                        <p class="text-sm font-medium text-gray-500">Orders Won Value</p>
-                        <p class="text-xl font-bold text-gray-900">₹{{ dashboardData.stats.orders_won_value }}</p>
-                    </div>
-                 </div>
-              </div>
-           </div>
-
-           <!-- Recent Bids -->
-         <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5 overflow-hidden">
-  <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-    <div class="flex items-center gap-2">
-      <FileText class="h-5 w-5 text-indigo-600" />
-      <h3 class="font-semibold text-gray-900">Recent Bids</h3>
-    </div>
-    <a href="#" @click.prevent="activeTab = 'My Bids'" class="text-sm font-semibold text-indigo-600 hover:text-indigo-500 flex items-center">
-      View All <span aria-hidden="true" class="ml-1">→</span>
-    </a>
-  </div>
-
-  <div class="p-4">
-    <div v-if="dashboardData.recent_bids.length === 0" class="py-10 text-center text-gray-500">
-      No recent bids found.
-    </div>
-
-    <ul v-else role="list" class="space-y-3">
-      <li v-for="bid in dashboardData.recent_bids" :key="bid.id" 
-          class="group relative flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:border-indigo-100 hover:bg-indigo-50/30 transition-all duration-200">
-        
-        <div class="min-w-0">
-          <div class="flex items-center gap-x-3">
-            <p class="text-sm font-bold leading-6 text-gray-900 group-hover:text-indigo-700">
-              {{ bid.title }}
-            </p>
-          </div>
-          <div class="mt-1 flex items-center gap-x-2 text-xs leading-5 text-gray-500">
-            <p class="font-medium text-gray-700">{{ bid.amount }}</p>
-            <svg viewBox="0 0 2 2" class="h-0.5 w-0.5 fill-gray-300"><circle cx="1" cy="1" r="1" /></svg>
-            <p>{{ bid.date }}</p>
-          </div>
-        </div>
-
-        <div class="flex flex-none items-center gap-x-4">
-          <span :class="[
-            bid.statusColor, 
-            'inline-flex items-center rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset'
-          ]">
-            {{ bid.status }}
-          </span>
-        </div>
-      </li>
-    </ul>
-  </div>
-</div>
-</div>
-        <!-- Right Column (Reused) -->
-         <div class="space-y-8">
-            <!-- Profile Strength -->
-            <div class="bg-white rounded-xl p-6 shadow-sm ring-1 ring-gray-900/5">
-   <h3 class="font-semibold text-gray-900 mb-4">Profile Strength</h3>
-   <div class="flex items-center gap-6">
-      <div class="relative h-20 w-20 flex-shrink-0">
-         <svg class="h-full w-full -rotate-90 transform" viewBox="0 0 36 36">
-            <path class="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" />
-            <path 
-               class="text-indigo-600" 
-               :stroke-dasharray="`${profileCompletion}, 100`" 
-               d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
-               fill="none" 
-               stroke="currentColor" 
-               stroke-width="4" 
-               stroke-linecap="round" 
-            />
-         </svg>
-         <div class="absolute inset-0 flex items-center justify-center flex-col">
-            <span class="text-sm font-bold text-gray-900">{{ profileCompletion }}%</span>
-         </div>
-      </div>
-      </div>
-</div>
-
-           <!-- Recent Activity -->
-         <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5">
-               <div class="p-4 border-b border-gray-100">
-                     <h3 class="font-semibold text-gray-900 flex items-center gap-2">
-                        <TrendingUp class="h-4 w-4 text-gray-400" />
-                        Recent Activity
-                     </h3>
-               </div>
-               <div class="p-4">
-                     <div v-if="!processedActivities.length" class="py-6 text-center text-sm text-gray-400">
-                        No recent activity found.
-                     </div>
-
-                     <ul v-else role="list" class="space-y-6">
-                        <li v-for="(activity, activityIdx) in processedActivities" 
-                           :key="activityIdx" 
-                           class="relative flex gap-x-4">
-                           
-                           <div 
-                                 v-if="activityIdx !== processedActivities.length - 1"
-                                 class="absolute left-0 top-0 flex w-8 justify-center -bottom-6" 
-                                 aria-hidden="true"
-                           >
-                                 <div class="w-px bg-gray-200" />
-                           </div>
-
-                           <div :class="[
-                                 activity.color, 
-                                 'relative flex h-8 w-8 flex-none items-center justify-center rounded-lg'
-                           ]">
-                                 <component :is="activity.icon" class="h-4 w-4" aria-hidden="true" />
-                           </div>
-
-                           <div class="flex-auto py-0.5">
-                                 <p class="text-sm font-medium text-gray-900 leading-snug" v-html="activity.title"></p>
-                                 <p class="text-xs text-gray-500 mt-1">
-                                    {{ activity.time }}
-                                 </p>
-                           </div>
-                        </li>
-                     </ul>
-               </div>
             </div>
+          </div>
+          <div class="bg-white rounded-xl p-6 shadow-sm ring-1 ring-gray-900/5">
+            <div class="flex items-center gap-4">
+              <div class="h-10 w-10 rounded-full bg-green-50 flex items-center justify-center"><Trophy class="h-5 w-5 text-green-600" /></div>
+              <div>
+                <p class="text-sm font-medium text-gray-500">Orders Won Value</p>
+                <p class="text-xl font-bold text-gray-900">₹{{ dashboardData.stats.orders_won_value }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
 
-            <div class="space-y-6">
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-50">
-               <h3 class="font-bold text-gray-900 mb-4 flex items-center gap-2 text-lg">
-                  <Clock class="w-5 h-5 text-amber-500"/> Upcoming Deadlines
-               </h3>
-               
-               <div class="space-y-3">
-                  <div v-if="dashboardData.upcoming_deadlines && dashboardData.upcoming_deadlines.length > 0">
-                  <div v-for="rfq in dashboardData.upcoming_deadlines" :key="rfq.name" 
-                     class="p-4 bg-slate-50/50 border border-slate-100 rounded-xl mb-3 hover:bg-slate-50 transition-colors">
-                     <p class="text-sm font-bold text-slate-800">
-                        {{ rfq.subject }}
-                     </p>
-                     <p class="text-xs text-amber-600 font-semibold mt-1.5 flex items-center gap-2">
-                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                        Ends: {{ formatDate(rfq.deadline) }}
-                     </p>
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5 overflow-hidden">
+          <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+            <div class="flex items-center gap-2"><FileText class="h-5 w-5 text-indigo-600" /><h3 class="font-semibold text-gray-900">Recent Bids</h3></div>
+            <a href="#" @click.prevent="activeTab = 'My Bids'" class="text-sm font-semibold text-indigo-600 hover:text-indigo-500">View All →</a>
+          </div>
+          <div class="p-4">
+            <div v-if="dashboardData.recent_bids.length === 0" class="py-10 text-center text-gray-500">No recent bids found.</div>
+            <ul v-else role="list" class="space-y-3">
+              <li v-for="bid in dashboardData.recent_bids" :key="bid.id" class="group flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:border-indigo-100 hover:bg-indigo-50/30 transition-all">
+                <div class="min-w-0">
+                  <p class="text-sm font-bold text-gray-900 group-hover:text-indigo-700">{{ bid.title }}</p>
+                  <div class="mt-1 flex items-center gap-x-2 text-xs text-gray-500">
+                    <p class="font-medium text-gray-700">{{ bid.amount }}</p>
+                    <svg viewBox="0 0 2 2" class="h-0.5 w-0.5 fill-gray-300"><circle cx="1" cy="1" r="1" /></svg>
+                    <p>{{ bid.date }}</p>
                   </div>
-               </div>
-      
-      <div v-else class="py-10 text-center border-2 border-dashed border-slate-100 rounded-xl">
-        <p class="text-xs text-slate-400 italic font-medium">No upcoming deadlines found</p>
-      </div>
-    </div>
-  </div>
-
-          <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-            <h3 class="font-bold text-gray-900 mb-4">Quick Actions</h3>
-            <div class="flex flex-col gap-2">
-              <button @click="$router.push('/tenders')" 
-            class="group flex items-center gap-3 py-3 px-5 text-sm font-medium text-gray-700 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 hover:border-slate-200 transition-all duration-200">
-      <PlusCircle class="w-4 h-4 text-slate-400 group-hover:text-blue-500 transition-colors" /> 
-      Browse New Tenders
-    </button>
-
-    <button @click="$router.push('/profile')" 
-            class="group flex items-center gap-3 py-3 px-5 text-sm font-medium text-gray-700 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 hover:border-slate-200 transition-all duration-200">
-      <UserCircle class="w-4 h-4 text-slate-400 group-hover:text-purple-500 transition-colors" /> 
-      Update Profile
-    </button>
-
-    <button @click="handleDownload" 
-            class="group flex items-center gap-3 py-3 px-5 text-sm font-medium text-gray-700 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 hover:border-slate-200 transition-all duration-200">
-      <Download class="w-4 h-4 text-slate-400 group-hover:text-green-500 transition-colors" /> 
-      Download Reports
-    </button>
-            </div>
+                </div>
+                <span :class="[bid.statusColor, 'rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset']">{{ bid.status }}</span>
+              </li>
+            </ul>
           </div>
         </div>
-        </div>
       </div>
-      
 
-      <!-- My Bids View -->
       <div v-else-if="activeTab === 'My Bids'" class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5 p-6">
-         <!-- Bids Table Header -->
-         <div class="flex items-center justify-between mb-6">
-            <h3 class="font-semibold text-gray-900 flex items-center gap-2">
-               <TrendingUp class="h-5 w-5 text-indigo-600" />
-               Complete Bid History
-            </h3>
-            <button class="flex items-center text-sm font-medium text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50">
-               <Download class="h-4 w-4 mr-2" /> Export
-            </button>
-         </div>
-         
-         <!-- Bids Table -->
-         <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-               <thead>
-                  <tr>
-                     <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-xs font-semibold text-gray-500 sm:pl-0">Tender</th>
-                     <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Your Bid</th>
-                     <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Submitted</th>
-                     <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Rank</th>
-                     <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Status</th>
-                     <th scope="col" class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Action</th>
-                  </tr>
-               </thead>
-               <tbody class="divide-y divide-gray-100">
-                  <tr v-for="bid in bidHistory" :key="bid.id" class="hover:bg-gray-50 transition-colors">
-                     <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">
-                        <div>{{ bid.title }}</div>
-                        <div class="text-xs text-gray-400 mt-0.5">{{ bid.id }}</div>
-                     </td>
-                     <td class="whitespace-nowrap px-3 py-4 text-sm font-semibold text-gray-900">{{ bid.amount }}</td>
-                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{ bid.submitted }}</td>
-                     <td class="whitespace-nowrap px-3 py-4 text-sm font-medium text-amber-500">{{ bid.rank }}</td>
-                     <td class="whitespace-nowrap px-3 py-4 text-sm">
-                        <span :class="[bid.statusColor, 'inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ring-gray-500/10']">
-                           {{ bid.status }}
-                        </span>
-                     </td>
-                     <td class="whitespace-nowrap px-3 py-4 text-sm">
-                        <button class="text-gray-400 hover:text-indigo-600 flex items-center gap-1 transition-colors">
-                           <Eye class="h-4 w-4" /> View
-                        </button>
-                     </td>
-                  </tr>
-               </tbody>
-            </table>
-         </div>
+        <div class="flex items-center justify-between mb-6">
+          <h3 class="font-semibold text-gray-900 flex items-center gap-2"><TrendingUp class="h-5 w-5 text-indigo-600" />Complete Bid History</h3>
+          <button class="flex items-center text-sm font-medium text-gray-600 border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50"><Download class="h-4 w-4 mr-2" /> Export</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead>
+              <tr>
+                <th class="py-3.5 pl-4 pr-3 text-left text-xs font-semibold text-gray-500 sm:pl-0">Tender</th>
+                <th class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Your Bid</th>
+                <th class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Submitted</th>
+                <th class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Rank</th>
+                <th class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Status</th>
+                <th class="px-3 py-3.5 text-left text-xs font-semibold text-gray-500">Action</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              <tr v-for="bid in bidHistory" :key="bid.id" class="hover:bg-gray-50 transition-colors">
+                <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">
+                  <div>{{ bid.title }}</div>
+                  <div class="text-xs text-gray-400 mt-0.5">{{ bid.id }}</div>
+                </td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm font-semibold text-gray-900">{{ bid.amount }}</td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{ bid.submitted }}</td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm font-medium text-amber-500">{{ bid.rank }}</td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm">
+                  <span :class="[bid.statusColor, 'inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ring-gray-500/10']">{{ bid.status }}</span>
+                </td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm"><button class="text-gray-400 hover:text-indigo-600 flex items-center gap-1"><Eye class="h-4 w-4" /> View</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-      
-      <!-- Analytics View -->
-      <!-- Analytics View -->
-      <div v-else-if="activeTab === 'Analytics'" class="grid grid-cols-1 gap-8 lg:grid-cols-3">
-         <!-- Left Column (Analytics) -->
-         <div class="lg:col-span-2 space-y-8">
-            <!-- Performance by Category -->
-            <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5 p-6">
-               <h3 class="font-semibold text-gray-900 mb-6 flex items-center gap-2">
-                  <PieChart class="h-5 w-5 text-indigo-600" />
-                  Performance by Category
-               </h3>
-               <div class="space-y-6">
-                  <div v-for="category in performanceCategories" :key="category.name">
-                     <div class="flex justify-between text-sm mb-1">
-                        <span class="font-medium text-gray-900">{{ category.name }}</span>
-                        <span class="text-gray-500">{{ category.won }}/{{ category.total }} won ({{ category.percentage }}%)</span>
-                     </div>
-                     <div class="w-full bg-gray-100 rounded-full h-2">
-                        <div class="h-2 rounded-full transition-all duration-500" :class="category.color" :style="{ width: `${category.percentage}%` }"></div>
-                     </div>
-                  </div>
-               </div>
-            </div>
 
-            <!-- Monthly Performance -->
-            <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5 p-6">
-               <h3 class="font-semibold text-gray-900 mb-6 flex items-center gap-2">
-                  <BarChart3 class="h-5 w-5 text-indigo-600" />
-                  Monthly Performance
-               </h3>
-               <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div v-for="month in monthlyPerformance" :key="month.month" class="bg-gray-50 rounded-lg p-4 text-center">
-                     <div class="text-sm font-medium text-gray-500 mb-1">{{ month.month }}</div>
-                     <div class="text-2xl font-bold text-gray-900 mb-1">{{ month.count }}</div>
-                     <div class="text-xs font-semibold text-green-600 flex items-center justify-center gap-0.5">
-                        <span>↑</span> {{ month.growth }}
-                     </div>
-                  </div>
-               </div>
+      <div v-else-if="activeTab === 'Analytics'" class="space-y-8">
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5 p-6">
+          <h3 class="font-semibold text-gray-900 mb-6 flex items-center gap-2"><PieChart class="h-5 w-5 text-indigo-600" />Performance by Category</h3>
+          <div class="space-y-6">
+            <div v-for="category in performanceCategories" :key="category.name">
+              <div class="flex justify-between text-sm mb-1">
+                <span class="font-medium text-gray-900">{{ category.name }}</span>
+                <span class="text-gray-500">{{ category.won }}/{{ category.total }} won ({{ category.percentage }}%)</span>
+              </div>
+              <div class="w-full bg-gray-100 rounded-full h-2">
+                <div class="h-2 rounded-full transition-all duration-500" :class="category.color" :style="{ width: `${category.percentage}%` }"></div>
+              </div>
             </div>
-         </div>
-
-         
-         <!-- Right Column (Reused) -->
-         <div class="space-y-8">
-            <!-- Profile Strength -->
-            <div class="bg-white rounded-xl p-6 shadow-sm ring-1 ring-gray-900/5">
-   <h3 class="font-semibold text-gray-900 mb-4">Profile Strength</h3>
-   <div class="flex items-center gap-6">
-      <div class="relative h-20 w-20 flex-shrink-0">
-         <svg class="h-full w-full -rotate-90 transform" viewBox="0 0 36 36">
-            <path class="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" />
-            <path 
-               class="text-indigo-600" 
-               :stroke-dasharray="`${profileCompletion}, 100`" 
-               d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
-               fill="none" 
-               stroke="currentColor" 
-               stroke-width="4" 
-               stroke-linecap="round" 
-            />
-         </svg>
-         <div class="absolute inset-0 flex items-center justify-center flex-col">
-            <span class="text-sm font-bold text-gray-900">{{ profileCompletion }}%</span>
-         </div>
-      </div>
-      </div>
-</div>
-
-            <!-- Recent Activity -->
-            <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5">
-               <div class="p-4 border-b border-gray-100">
-                  <h3 class="font-semibold text-gray-900 flex items-center gap-2">
-                     <TrendingUp class="h-4 w-4 text-gray-400" />
-                     Recent Activity
-                  </h3>
-               </div>
-               <div class="p-4">
-                  <ul role="list" class="space-y-6">
-                     <li v-for="(activity, activityIdx) in activities" :key="activityIdx" class="relative flex gap-x-4">
-                        <div class="absolute left-0 top-0 flex w-6 justify-center -bottom-6" v-if="activityIdx !== activities.length - 1">
-                           <div class="w-px bg-gray-200" />
-                        </div>
-                        <div :class="[activity.iconColor, 'relative flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-gray-50']">
-                           <component :is="activity.icon" class="h-4 w-4" aria-hidden="true" />
-                        </div>
-                        <div class="flex-auto py-0.5">
-                           <p class="text-sm font-medium text-gray-900 leading-snug">{{ activity.title }}</p>
-                           <p class="text-xs text-gray-500 mt-1">{{ activity.time }}</p>
-                        </div>
-                     </li>
-                  </ul>
-               </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5 p-6">
+          <h3 class="font-semibold text-gray-900 mb-6 flex items-center gap-2"><BarChart3 class="h-5 w-5 text-indigo-600" />Monthly Performance</h3>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div v-for="month in monthlyPerformance" :key="month.month" class="bg-gray-50 rounded-lg p-4 text-center">
+              <div class="text-sm font-medium text-gray-500 mb-1">{{ month.month }}</div>
+              <div class="text-2xl font-bold text-gray-900 mb-1">{{ month.count }}</div>
+              <div class="text-xs font-semibold text-green-600 flex items-center justify-center gap-0.5"><span>↑</span> {{ month.growth }}</div>
             </div>
-         </div>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
+
+    <div class="space-y-8">
+      <div class="bg-white rounded-xl p-6 shadow-sm ring-1 ring-gray-900/5">
+        <h3 class="font-semibold text-gray-900 mb-4">Profile Strength</h3>
+        <div class="flex items-center gap-6">
+          <div class="relative h-20 w-20 flex-shrink-0">
+            <svg class="h-full w-full -rotate-90 transform" viewBox="0 0 36 36">
+              <path class="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" />
+              <path class="text-indigo-600" :stroke-dasharray="`${profileCompletion}, 100`" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" />
+            </svg>
+            <div class="absolute inset-0 flex items-center justify-center flex-col"><span class="text-sm font-bold text-gray-900">{{ profileCompletion }}%</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5">
+        <div class="p-4 border-b border-gray-100"><h3 class="font-semibold text-gray-900 flex items-center gap-2"><TrendingUp class="h-4 w-4 text-gray-400" />Recent Activity</h3></div>
+        <div class="p-4">
+          <div v-if="!processedActivities.length" class="py-6 text-center text-sm text-gray-400">No recent activity found.</div>
+          <ul v-else role="list" class="space-y-6">
+            <li v-for="(activity, activityIdx) in processedActivities" :key="activityIdx" class="relative flex gap-x-4">
+              <div v-if="activityIdx !== processedActivities.length - 1" class="absolute left-0 top-0 flex w-8 justify-center -bottom-6" aria-hidden="true"><div class="w-px bg-gray-200" /></div>
+              <div :class="[activity.color, 'relative flex h-8 w-8 flex-none items-center justify-center rounded-lg']"><component :is="activity.icon" class="h-4 w-4" aria-hidden="true" /></div>
+              <div class="flex-auto py-0.5"><p class="text-sm font-medium text-gray-900 leading-snug" v-html="activity.title"></p><p class="text-xs text-gray-500 mt-1">{{ activity.time }}</p></div>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="lg:col-span-1 space-y-8">
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-50">
+        <h3 class="font-bold text-gray-900 mb-4 flex items-center gap-2 text-lg">
+            <Clock class="w-5 h-5 text-amber-500"/> Upcoming Deadlines
+        </h3>
+        <div v-if="dashboardData.upcoming_deadlines?.length > 0" class="space-y-3">
+            <div v-for="rfq in dashboardData.upcoming_deadlines" :key="rfq.id" 
+                 class="p-4 bg-slate-50/50 border border-slate-100 rounded-xl">
+                <p class="text-sm font-bold text-slate-800">{{ rfq.title }}</p>
+                <p class="text-xs text-amber-600 font-semibold mt-1.5 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                    Ends: {{ rfq.deadline }}
+                </p>
+            </div>
+        </div>
+        <div v-else class="py-10 text-center border-2 border-dashed border-slate-100 rounded-xl">
+            <p class="text-xs text-slate-400 italic">No upcoming deadlines found</p>
+        </div>
+    </div>
+    </div>
+
+      <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <h3 class="font-bold text-gray-900 mb-4">Quick Actions</h3>
+        <div class="flex flex-col gap-2">
+          <button @click="$router.push('/tenders')" class="group flex items-center gap-3 py-3 px-5 text-sm font-medium text-gray-700 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 hover:border-slate-200 transition-all duration-200"><PlusCircle class="w-4 h-4 text-slate-400 group-hover:text-blue-500 transition-colors" /> Browse New Tenders</button>
+          <button @click="$router.push('/profile')" class="group flex items-center gap-3 py-3 px-5 text-sm font-medium text-gray-700 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 hover:border-slate-200 transition-all duration-200"><UserCircle class="w-4 h-4 text-slate-400 group-hover:text-purple-500 transition-colors" /> Update Profile</button>
+          <button @click="handleDownload" class="group flex items-center gap-3 py-3 px-5 text-sm font-medium text-gray-700 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 hover:border-slate-200 transition-all duration-200"><Download class="w-4 h-4 text-slate-400 group-hover:text-green-500 transition-colors" /> Download Reports</button>
+        </div>
+      </div>
+    </div> 
+   </div> 
+</div>
+</div>
 </template>
