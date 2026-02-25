@@ -16,6 +16,12 @@ const isSaved = ref(false)
 const savedTendersList = ref([])
 const isSessionExpired = ref(false)
 
+const showSupportModal = ref(false);
+const tenderDetails = ref({
+  custom_contact_person_display: '',
+  custom_contact_address_display: ''
+});
+
 const refetchSession = async () => {
    // Try to bounce the session
    isLoading.value = true;
@@ -206,10 +212,7 @@ const fetchTenderDetails = async () => {
         name: route.params.id
     }))
     
-    // AuthStore secureFetch returns a response object
-    // Check if response was 403/401 and handle gracefully
     if (!response.ok && (response.status === 403 || response.status === 401)) {
-       console.warn("Permission denied for tender. Likely session expired.");
        isSessionExpired.value = true;
        throw new Error("Session Expired");
     }
@@ -217,19 +220,24 @@ const fetchTenderDetails = async () => {
     const result = await response.json()
     const data = result.message
 
-    if (!data) {
-        throw new Error("No data returned")
+    if (!data) throw new Error("No data returned")
+
+    tenderDetails.value = {
+      custom_contact_person_display: data.custom_contact_person_display,
+      custom_contact_address_display: data.custom_contact_address_display
     }
 
     tender.value = {
       id: data.name,
       title: data.title,
       publishedDate: data.publish_date ? new Date(data.publish_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A',
-      location: data.billing_address ,
+      location: data.billing_address ? data.billing_address.replace(/<br\s*\/?>/gi, ', ') : 'N/A',
       category: data.category,
       status: data.status,
       liveBidding: data.enable_live_bidding,
       description: data.description ,
+      contactPerson: data.custom_contact_person_display,
+      contactAddress: data.custom_contact_address_display,
       UOM:data.uom,
       quantity: data.total_quantity?.toLocaleString('en-IN') || 0,      
       bidsReceived: data.bidsReceived || 0,
@@ -265,6 +273,10 @@ const fetchTenderDetails = async () => {
   } finally {
     isLoading.value = false
   }
+}
+
+const openSupportModal = () => {
+  showSupportModal.value = true;
 }
 
 const activeTab = ref('Overview')
@@ -1017,14 +1029,58 @@ onMounted(async () => {
 </div>
 
  
-             <!-- Help Box -->
-             <div class="bg-indigo-900 rounded-xl p-6 text-white text-center">
-                <h4 class="font-bold text-sm mb-2">Need Help?</h4>
-                <p class="text-xs text-indigo-200 mb-4 leading-relaxed">Have questions about this tender? Contact our support team.</p>
-                <button class="w-full bg-white text-indigo-900 text-xs font-bold py-2 rounded-lg shadow-sm hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2">
-                   Contact Support
-                </button>
-             </div>
+            <div class="bg-indigo-900 rounded-xl p-6 text-white text-center shadow-lg">
+    <h4 class="font-bold text-sm mb-2">Need Help?</h4>
+    <p class="text-xs text-indigo-200 mb-4 leading-relaxed">
+        Have questions about this tender? Contact our support team.
+    </p>
+    <button 
+        @click="showSupportModal = true"
+        class="w-full bg-white text-indigo-900 text-xs font-bold py-2 rounded-lg shadow-sm hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2"
+    >
+        <MessageSquare class="w-4 h-4" /> 
+        Contact Support
+    </button>
+  </div>
+
+  <div v-if="showSupportModal" 
+       class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+       @click.self="showSupportModal = false">
+      
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all duration-300 scale-100">
+          <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h3 class="font-bold text-gray-900">Contact Information</h3>
+              <button @click="showSupportModal = false" class="text-gray-400 hover:text-gray-600 transition-colors">
+                  <X class="h-5 w-5" />
+              </button>
+          </div>
+
+          <div class="p-6 space-y-6">
+              <div>
+                  <label class="text-[10px] uppercase tracking-widest font-bold text-indigo-600 mb-1 block">Contact Person</label>
+                  <p class="text-gray-900 font-semibold text-lg">
+                      {{ tenderDetails.custom_contact_person_display || 'Support Team' }}
+                  </p>
+              </div>
+
+              <div>
+                  <label class="text-[10px] uppercase tracking-widest font-bold text-indigo-600 mb-1 block">Office Address</label>
+                  <div class="text-gray-600 text-sm leading-relaxed whitespace-pre-line bg-gray-50 p-4 rounded-xl border border-gray-100">
+                      {{ tenderDetails.custom_contact_address_display || 'Address details not available.' }}
+                  </div>
+              </div>
+          </div>
+
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100">
+              <button 
+                  @click="showSupportModal = false"
+                  class="w-full px-4 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
+              >
+                  Close
+              </button>
+          </div>
+      </div>
+  </div>
  
           </div>
        </div>

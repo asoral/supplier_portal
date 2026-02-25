@@ -50,37 +50,54 @@ frappe.ui.form.on("Request for Quotation", {
             });
         }
     },
-    custom_contact_person: function (frm) {
+    custom_contact_person: function(frm) {
         if (frm.doc.custom_contact_person) {
             frappe.call({
-                method: 'frappe.contacts.doctype.contact.contact.get_contact_details',
-                args: { contact: frm.doc.custom_contact_person },
-                callback: function (r) {
+                method: "frappe.contacts.doctype.contact.contact.get_contact_details",
+                args: {
+                    contact: frm.doc.custom_contact_person
+                },
+                callback: function(r) {
                     if (r.message) {
-                        frm.set_value('custom_contact_display', r.message.contact_display);
+                        frm.set_value('custom_contact_person_display', r.message.contact_display || '');
                     }
                 }
             });
         } else {
-            frm.set_value('custom_contact_display', "");
+            frm.set_value('custom_contact_person_display', '');
         }
     },
-    custom_contact_address: function (frm) {
-        if (frm.doc.custom_contact_address) {
-            frappe.call({
-                method: 'frappe.contacts.doctype.address.address.get_address_display',
-                args: { address_dict: frm.doc.custom_contact_address },
-                callback: function (r) {
-                    // get_address_display usually returns html directly or inside message
-                    if (r.message) {
-                        frm.set_value('custom_address_display', r.message);
-                    }
+
+    custom_contact_address: function(frm) {
+    if (frm.doc.custom_contact_address) {
+        frappe.db.get_doc("Address", frm.doc.custom_contact_address)
+            .then(doc => {
+                let address_parts = [
+                    doc.address_line1,
+                    doc.address_line2,
+                    doc.city,
+                    doc.state,
+                    doc.pincode,
+                    doc.country
+                ].filter(Boolean); 
+
+                let formatted_address = address_parts.join("\n");
+                
+                if (doc.phone) {
+                    formatted_address += "\n\nPhone: " + doc.phone;
                 }
+
+                frm.set_value('custom_contact_address_display', formatted_address);
+                frm.refresh_field('custom_contact_address_display');
+            })
+            .catch(err => {
+                console.error("Address fetch failed:", err);
+                frm.set_value('custom_contact_address_display', "Error loading address.");
             });
-        } else {
-            frm.set_value('custom_address_display', "");
-        }
+    } else {
+        frm.set_value('custom_contact_address_display', "");
     }
+}
 });
 
 frappe.ui.form.on("Request for Quotation Item", {
