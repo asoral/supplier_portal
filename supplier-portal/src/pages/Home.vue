@@ -1,4 +1,5 @@
 <script setup>
+import { ref, onMounted } from 'vue'
 import { 
   ArrowRight, 
   CheckCircle, 
@@ -19,7 +20,34 @@ import {
   TrendingUp,
   Award
 } from 'lucide-vue-next'
+
 import { useRouter } from 'vue-router'
+const activeTenders = ref([])
+const isLoading = ref(true)
+const fetchTenders = async () => {
+  try {
+    isLoading.value = true
+    const response = await fetch('/api/method/supplier_portal.api.get_active_tenders?limit=6')
+    const data = await response.json()
+    activeTenders.value = data.message || []
+  } catch (error) {
+    console.error("Error fetching tenders:", error)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(() => {
+  fetchTenders()
+})
+
+const formatCurrency = (value) => {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0
+  }).format(value)
+}
 
 const router = useRouter()
 
@@ -132,9 +160,6 @@ const testimonials = [
           <button @click="router.push('/tenders')" class="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 md:text-lg transition-all hover:scale-105 shadow-lg shadow-indigo-200">
             Explore Active Tenders
           </button>
-          <button class="inline-flex items-center justify-center px-8 py-3 border border-gray-300 text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 md:text-lg transition-all hover:scale-105">
-            <PlayCircle class="w-5 h-5 mr-2 text-gray-400" /> Try Demo
-          </button>
         </div>
 
         <!-- Trust Indicators -->
@@ -220,6 +245,81 @@ const testimonials = [
           </div>
        </div>
     </div>
+
+   <div class="py-24 bg-white border-y border-gray-100">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="flex justify-between items-end mb-12">
+      <div>
+        <div class="flex items-center gap-2 mb-2">
+          <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 text-[10px] font-bold text-red-500 uppercase tracking-wider border border-red-100">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+            </span>
+            Live Now
+          </div>
+        </div>
+        <h2 class="text-4xl font-extrabold text-gray-900">Active Tenders</h2>
+        <p class="mt-2 text-gray-500">Browse current opportunities and submit your competitive bids</p>
+      </div>
+      <button @click="router.push('/tenders')" class="hidden md:flex items-center text-indigo-600 font-semibold hover:text-indigo-500 transition-colors">
+        View All <ArrowRight class="w-4 h-4 ml-2" />
+      </button>
+    </div>
+
+    <div v-if="isLoading" class="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div v-for="i in 3" :key="i" class="h-64 bg-gray-50 animate-pulse rounded-2xl border border-gray-100"></div>
+    </div>
+
+    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      <div v-for="tender in activeTenders" :key="tender.name" 
+           class="group bg-white rounded-2xl p-8 border border-gray-100 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all duration-300 flex flex-col">
+        
+        <div class="flex justify-between items-start mb-6">
+          <div class="flex flex-wrap gap-2">
+             <span class="px-2 py-1 bg-gray-100 text-gray-600 text-[10px] font-bold rounded uppercase">
+                {{ tender.custom_rfq_category || 'General' }}
+             </span>
+             <span class="px-2 py-1 bg-blue-50 text-blue-600 text-[10px] font-bold rounded uppercase">
+                {{ tender.status }}
+             </span>
+          </div>
+          <div v-if="tender.custom_enable_live_bidding" class="flex items-center gap-1 text-red-500 text-[10px] font-bold uppercase">
+             <Zap class="w-3 h-3 fill-current" /> Live Bidding
+          </div>
+        </div>
+
+        <h3 class="text-xl font-bold text-gray-900 mb-2 truncate group-hover:text-indigo-600 transition-colors">
+          {{ tender.custom_rfq_subject }}
+        </h3>
+        
+        <div class="space-y-4 mb-8 mt-4">
+          <div class="flex flex-col">
+             <span class="text-xs text-gray-400 uppercase font-medium">Total Budget</span>
+             <span class="font-extrabold text-gray-900 text-xl">₹{{ tender.custom_total_budget_?.toLocaleString('en-IN') }}</span>
+          </div>
+          
+          <div class="flex justify-between items-center py-3 border-t border-gray-50">
+             <div class="flex items-center gap-2 text-sm text-gray-500">
+                <Clock class="w-4 h-4 text-gray-400" />
+                <span>Deadline:</span>
+             </div>
+             <span class="text-sm font-bold text-gray-900">{{ tender.custom_bid_submission_last_date }}</span>
+          </div>
+        </div>
+
+        <button @click="router.push(`/tenders/${tender.name}`)" 
+                class="mt-auto w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 active:scale-95">
+          View & Bid
+        </button>
+      </div>
+    </div>
+
+    <div v-if="!isLoading && activeTenders.length === 0" class="text-center py-12">
+       <p class="text-gray-400 italic">No active tenders available at the moment.</p>
+    </div>
+  </div>
+</div>
 
     <!-- Features -->
     <div class="py-24 bg-white">

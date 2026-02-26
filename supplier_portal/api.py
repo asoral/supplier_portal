@@ -97,37 +97,39 @@ def get_active_tenders(limit=20, offset=0, priority=None):
     user = frappe.session.user
     limit = int(limit)
     offset = int(offset)
-    
+
     invited_rfq_names = []
-    
+
     if user and user != "Guest":
-        # Simplified lookup using pluck to get a clean list of IDs
-        suppliers = frappe.get_all("Portal User", 
-            filters={"user": user, "parenttype": "Supplier"}, 
-            pluck="parent", ignore_permissions=True)
-        
+        suppliers = frappe.get_all(
+            "Portal User",
+            filters={"user": user, "parenttype": "Supplier"},
+            pluck="parent",
+            ignore_permissions=True
+        )
+
         if suppliers:
-            invited_rfq_names = frappe.get_all("Request for Quotation Supplier", 
-                filters={"supplier": ["in", suppliers]}, 
-                pluck="parent", ignore_permissions=True)
+            invited_rfq_names = frappe.get_all(
+                "Request for Quotation Supplier",
+                filters={"supplier": ["in", suppliers]},
+                pluck="parent",
+                ignore_permissions=True
+            )
 
     query_values = []
-    
-    # Use AND 1=0 for a cleaner 'false' condition in SQL
+
+    # Build private condition
+    private_condition = ""
     if invited_rfq_names:
         placeholders = ', '.join(['%s'] * len(invited_rfq_names))
-        private_condition = f"OR name IN ({placeholders})"
+        private_condition = f" OR name IN ({placeholders})"
         query_values.extend(invited_rfq_names)
-    else:
-        private_condition = "AND 1=0"
 
     priority_sql = ""
-    # Ensure we only filter if a valid priority is passed
     if priority and priority != "All":
-        priority_sql = "AND custom_priority = %s"
+        priority_sql = " AND custom_priority = %s"
         query_values.append(priority)
 
-    # Values must match the order of %s in the SQL string below
     query_values.extend([limit, offset])
 
     sql = f"""
@@ -143,19 +145,19 @@ def get_active_tenders(limit=20, offset=0, priority=None):
             custom_enable_live_bidding, 
             transaction_date, 
             status,
-            custom_priority, -- ADDED THIS: Needed for Vue chips and filters
+            custom_priority,
             custom_publish_on_website
         FROM `tabRequest for Quotation`
         WHERE docstatus = 1
         AND (
             custom_publish_on_website = 1
-            {private_condition} 
+            {private_condition}
         )
         {priority_sql}
         ORDER BY modified DESC
         LIMIT %s OFFSET %s
     """
-    
+
     return frappe.db.sql(sql, tuple(query_values), as_dict=True)
 
 @frappe.whitelist(allow_guest=True)
@@ -1162,7 +1164,9 @@ def get_supplier_profile():
         "address": address[0] if address else {},
         "contact": contact[0] if contact else {},
         "member_since": supplier_doc.creation,
-        "product_categories": product_categories
+        "product_categories": product_categories,
+        "supplier_details":supplier_doc.supplier_details,
+        "website":supplier_doc.website
         }
 
 def get_supplier_categories(supplier_name):

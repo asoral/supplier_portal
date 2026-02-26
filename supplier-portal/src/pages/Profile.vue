@@ -105,6 +105,8 @@ const fetchProfileData = async () => {
         about: m.about_company || '',
         employees: m.employee_count || 'Not Specified',
         turnover: m.annual_turnover || 'Not Specified',
+        AboutCompany:m.supplier_details,
+        website:m.website,
         // ADDED HERE: This prevents the 'blank page' crash
         productCategories: m.product_categories ?? []
       }
