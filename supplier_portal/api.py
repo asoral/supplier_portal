@@ -277,15 +277,7 @@ def get_dashboard_stats():
             return {"error": "No supplier linked"}
             
         supplier_names = [s.parent for s in suppliers]
-        
-        # 2. Aggregate Stats across all linked suppliers
-        
-        # Use simple counts with ignore_permissions check implicitly via SQL or explicit logic?
-        # frappe.db.count can take a User context? No.
-        # But we can use frappe.db.count which mimics simple SQL count. 
-        # Does frappe.db.count enforce permissions? Yes usually.
-        # We will use frappe.get_all list count OR simple SQL.
-        
+                
         # Total Bids (Supplier Quotations)
         total_bids = frappe.db.count("Supplier Quotation", filters={"supplier": ["in", supplier_names], "docstatus": ["<", 2]})
         
@@ -302,15 +294,26 @@ def get_dashboard_stats():
         
         placeholders = ', '.join(['%s'] * len(supplier_names))
         
-        total_bids = frappe.db.sql(f"SELECT count(*) FROM `tabSupplier Quotation` WHERE supplier IN ({placeholders}) AND docstatus < 2", tuple(supplier_names))[0][0]
-        orders_won = frappe.db.sql(f"SELECT count(*) FROM `tabPurchase Order` WHERE supplier IN ({placeholders}) AND docstatus = 1", tuple(supplier_names))[0][0]
-        pending_review = frappe.db.sql(f"SELECT count(*) FROM `tabSupplier Quotation` WHERE supplier IN ({placeholders}) AND status = 'Submitted'", tuple(supplier_names))[0][0]
+        total_bids = frappe.db.sql(f"""
+            SELECT count(*) FROM `tabSupplier Quotation` 
+            WHERE supplier IN ({placeholders}) AND docstatus < 2
+        """, tuple(supplier_names))[0][0]
+    
+        orders_won = frappe.db.sql(f"""
+            SELECT count(*) FROM `tabSupplier Quotation` 
+            WHERE supplier IN ({placeholders}) 
+            AND status = 'Ordered' 
+            AND docstatus = 1
+        """, tuple(supplier_names))[0][0]
 
-        # Win Rate
-        win_rate = 0
-        if total_bids > 0:
-            win_rate = int((orders_won / total_bids) * 100)
-        
+        pending_review = frappe.db.sql(f"""
+            SELECT count(*) FROM `tabSupplier Quotation` 
+            WHERE supplier IN ({placeholders}) 
+            AND status = 'Submitted'
+        """, tuple(supplier_names))[0][0]
+
+        win_rate = int((total_bids / orders_won) * 100) if total_bids > 0 else 0
+                
         # 3. Recent Bids (Fetch for ANY of the suppliers)
         # SQL already bypasses perms required
         recent_bids_data = frappe.db.sql(f"""
@@ -854,7 +857,7 @@ def get_dashboard_stats():
 
     upcoming_rfqs = frappe.get_all("Request for Quotation",
         filters={
-            "docstatus": 0,
+            "docstatus": 1,
             "status": ["!=", "Closed"],
             "custom_bid_submission_last_date": [">=", frappe.utils.nowdate()]
         },
@@ -865,11 +868,13 @@ def get_dashboard_stats():
 
     formatted_deadlines = []
     for rfq in upcoming_rfqs:
+        days_left = frappe.utils.date_diff(rfq.custom_bid_submission_last_date, frappe.utils.nowdate())
         formatted_deadlines.append({
             "id": rfq.name,
-            "subject": rfq.custom_rfq_subject or rfq.name,
+            "title": rfq.custom_rfq_subject or rfq.name,
             "deadline": frappe.utils.formatdate(rfq.custom_bid_submission_last_date, "dd MMM yyyy"),
-            "days_left": frappe.utils.date_diff(rfq.custom_bid_submission_last_date, frappe.utils.nowdate())
+            "days_left": days_left,
+            "urgency": "high" if days_left <= 2 else "normal"
         })
 
     status_colors = {
