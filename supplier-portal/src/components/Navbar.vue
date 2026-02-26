@@ -73,10 +73,17 @@ const toggleMenu = () => {
   isOpen.value = !isOpen.value
 }
 
-const handleLogout = async () => {
-  await logout()
-  isProfileOpen.value = false
+const handleLogout = () => {
+  authStore.logout();
+  localStorage.clear();
+  sessionStorage.clear();
+  
+  isProfileOpen.value = false;
+
+  const portalHome = '/supplier-portal/';
+  window.location.href = `/logout?redirect_to=${portalHome}`;
 }
+
 </script>
 
 <template>

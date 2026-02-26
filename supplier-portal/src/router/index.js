@@ -90,7 +90,7 @@ const router = createRouter({
 // [FIX] Strict Auth Guard
 // Prevent access to protected routes if not authenticated
 router.beforeEach(async (to, from, next) => {
-  const publicPages = ['/login', '/register', '/help', '/'];
+  const publicPages = ['/login', '/register', '/help', '/','/tenders'];
   const authRequired = !publicPages.includes(to.path);
   const { useAuthStore } = await import('../stores/auth');
   const authStore = useAuthStore();
