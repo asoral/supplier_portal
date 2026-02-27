@@ -48,10 +48,7 @@ const moreNavigation = [
   { name: 'My Catalog', href: '/catalog', icon: 'Package' },
   { name: 'Deliveries', href: '/deliveries', icon: 'Truck' },
   { name: 'Invoices', href: '/invoices', icon: 'FileText' },
-  { name: 'Documents', href: '/documents', icon: 'FileCode' },
   { name: 'Queries', href: '/queries', icon: 'MessageSquare' },
-  { name: 'Integrations', href: '/integrations', icon: 'Webhook' },
-  { name: 'Help', href: '/help', icon: 'HelpCircle' },
 ]
 
 const iconMap = {

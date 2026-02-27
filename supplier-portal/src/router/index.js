@@ -47,16 +47,6 @@ const routes = [
     component: () => import('../pages/Invoices.vue')
   },
   {
-    path: '/documents',
-    name: 'Documents',
-    component: () => import('../pages/Documents.vue')
-  },
-  {
-    path: '/integrations',
-    name: 'Integrations',
-    component: () => import('../pages/Integrations.vue')
-  },
-  {
     path: '/catalog',
     name: 'Catalog',
     component: () => import('../pages/Catalog.vue')
@@ -69,11 +59,6 @@ const routes = [
     path: '/queries',
     name: 'Queries',
     component: () => import('../pages/Queries.vue')
-  },
-  {
-    path: '/help',
-    name: 'Help',
-    component: () => import('../pages/Help.vue')
   },
   {
     path: '/profile',

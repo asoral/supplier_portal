@@ -419,7 +419,6 @@ onMounted(async () => {
         Delivery: <span class="text-gray-900 font-medium">{{ contract.deliveryDate }}</span>
       </span>
       
-      <span>Items: <b>{{ contract.deliveryCount }}/{{ contract.totalItems }}</b> delivered</span>
     </div>
   </div>
 </div>

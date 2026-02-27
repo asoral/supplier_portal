@@ -8,7 +8,7 @@ import { useAuthStore } from '../stores/auth' // [FIX] Import store
 // --- State Management ---
 const authStore = useAuthStore() // [FIX] Initialize store
 const activeTab = ref('My Queries')
-const tabs = ['My Queries', 'Questionnaires']
+const tabs = ['My Queries']
 const searchQuery = ref('')
 const isLoading = ref(true)
 const queries = ref([]) // Stores live data from RFQ Query doctype
@@ -189,7 +189,6 @@ const stats = computed(() => {
     { name: 'Total Queries', value: totalQueries.toString(), icon: MessageSquare, color: 'text-blue-600', bg: 'bg-blue-50' },
     { name: 'Pending', value: pending.toString(), icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50' },
     { name: 'Answered', value: answered.toString(), icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
-    { name: 'Questionnaires', value: questionnaires.toString(), icon: FileQuestion, color: 'text-indigo-600', bg: 'bg-indigo-50' },
   ]
 })
 
@@ -236,21 +235,18 @@ onMounted(() => {
   <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
     <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
       <div>
-        <h1 class="text-3xl font-bold tracking-tight text-gray-900">Queries & Questionnaires</h1>
-        <p class="mt-1 text-sm text-gray-500">Submit queries about tenders and respond to questionnaires.</p>
+        <h1 class="text-3xl font-bold tracking-tight text-gray-900">Queries</h1>
+        <p class="mt-1 text-sm text-gray-500">Submit queries about tenders.</p>
       </div>
       <div class="flex gap-3">
-         <button @click="openRequestModal" class="inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
-            <FileText class="h-4 w-4" /> Request Questionnaire
-         </button>
          <button @click="openModal" class="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
             <Plus class="h-4 w-4" /> New Query
          </button>
       </div>
     </div>
 
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-4 mb-8">
-       <div v-for="stat in stats" :key="stat.name" class="rounded-lg bg-white px-4 py-5 shadow sm:p-6 border border-gray-100 flex items-center gap-4">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-8">
+       <div v-for="stat in stats" :key="stat.name" class="rounded-lg bg-white px-6 py-8 shadow sm:p-6 border border-gray-100 flex items-center gap-6">
           <div :class="[stat.bg, 'rounded-md p-3']">
              <component :is="stat.icon" :class="[stat.color, 'h-6 w-6']" />
           </div>
