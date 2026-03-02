@@ -63,13 +63,6 @@ const faqs = [
          { q: 'How do I update my rates?', a: 'Edit the product in your catalog. Note that rate changes may require approval depending on your contract terms.' }
       ]
    },
-   {
-      category: 'Integrations',
-      items: [
-         { q: 'How do I set up webhooks for my ERP?', a: 'Go to "Integrations" > "Webhooks", click "Create New", and enter your endpoint URL.' },
-         { q: 'Where can I find my API key?', a: 'Go to "Integrations" > "API Keys" to generate and view your secret keys.' }
-      ]
-   }
 ]
 
 const userGuides = [
