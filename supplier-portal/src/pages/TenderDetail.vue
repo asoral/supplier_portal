@@ -251,6 +251,7 @@ const fetchTenderDetails = async () => {
       autoExtension: data.auto_extension_limit ? data.auto_extension_limit + ' mins' : '0 mins',
       deliveryDate: data.schedule_date,
       items: data.items || [],
+      Incoterm: data.incoterm,
       documents: (data.documents || []).map(d => ({
           name: d.file_name,
           url: d.file_url,
@@ -787,19 +788,15 @@ onMounted(async () => {
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                        <div class="p-4 border border-gray-200 rounded-lg">
                           <div class="text-xs text-gray-500 mb-1">Delivery Location</div>
-                          <div class="font-medium text-gray-900">Delhi NCR</div>
+                          <div class="font-medium text-gray-900">{{ tender.location }}</div>
                        </div>
                        <div class="p-4 border border-gray-200 rounded-lg">
                           <div class="text-xs text-gray-500 mb-1">Expected Delivery Date</div>
-                          <div class="font-medium text-gray-900">15 March 2024</div>
+                          <div class="font-medium text-gray-900">{{ tender.deliveryDate }}</div>
                        </div>
                        <div class="p-4 border border-gray-200 rounded-lg">
                           <div class="text-xs text-gray-500 mb-1">Delivery Terms</div>
-                          <div class="font-medium text-gray-900">FOR Destination</div>
-                       </div>
-                       <div class="p-4 border border-gray-200 rounded-lg">
-                          <div class="text-xs text-gray-500 mb-1">Inspection</div>
-                          <div class="font-medium text-gray-900">Before Dispatch + At Site</div>
+                          <div class="font-medium text-gray-900">{{tender.Incoterm}}</div>
                        </div>
                     </div>
                 </div>

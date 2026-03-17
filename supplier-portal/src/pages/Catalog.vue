@@ -219,11 +219,6 @@ const stats = computed(() => [
     icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' 
   },
   { 
-    name: 'Pending Approval', 
-    value: products.value.filter(p => p.is_my_item && p.status === 'pending').length, 
-    icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50' 
-  },
-  { 
     name: 'Matched Tenders', 
     value: products.value.reduce((acc, p) => p.is_my_item ? acc + (p.matches || 0) : acc, 0), 
     icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50' 
@@ -240,7 +235,7 @@ const stats = computed(() => [
       </div>
     </div>
 
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-4 mb-8">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-8">
        <div v-for="stat in stats" :key="stat.name" class="rounded-lg bg-white px-4 py-5 shadow sm:p-6 border border-gray-100 flex items-center gap-4">
           <div :class="[stat.bg, 'rounded-md p-3']">
              <component :is="stat.icon" :class="[stat.color, 'h-6 w-6']" />
@@ -326,7 +321,7 @@ const stats = computed(() => [
                        <span class="mx-2 text-gray-300">•</span>
                        <span class="font-bold text-gray-700">Unit:</span> {{ product.unit || 'Nos' }}
                    </div>
-                   <p class="text-sm text-gray-600 leading-relaxed">{{ product.description }}</p>
+                   <p class="text-xs text-gray-600 leading-relaxed" v-html="product.description"></p>
                 </div>
 
                 <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 min-w-[320px] border-t lg:border-t-0 lg:border-l border-gray-100 pt-4 lg:pt-0 lg:pl-8">
