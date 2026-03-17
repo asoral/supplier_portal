@@ -256,7 +256,8 @@ def get_tender_details(name):
         "enable_live_bidding": doc.get("custom_enable_live_bidding"),
         # Timelines
         "transaction_date": doc.transaction_date, 
-        "schedule_date": doc.schedule_date
+        "schedule_date": doc.schedule_date,
+        "incoterm":doc.incoterm
     }
 
 @frappe.whitelist(allow_guest=True)
