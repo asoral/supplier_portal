@@ -1,6 +1,7 @@
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Sum
+from frappe.utils import nowdate, strip_html
 
 @frappe.whitelist(allow_guest=True)
 def register_vendor(company_name, email, contact_person, phone, gst=None, password=None):
@@ -1201,3 +1202,111 @@ def count_saved_tenders():
     print("--------------------count",count)
    
     return count
+
+@frappe.whitelist(allow_guest=False)
+def get_dashboard_counts():
+    user = frappe.session.user
+    supplier = frappe.db.get_value("Portal User", {"user": user}, "parent")
+    today = nowdate()
+
+    if not supplier:
+        return {
+            "counts": {"total": 0, "in_transit": 0, "delivered": 0, "delayed": 0},
+            "deliveries": []
+        }
+
+    total = frappe.db.count("Purchase Receipt", filters={"supplier": supplier, "docstatus": ["!=", 2]})
+    
+    in_transit = frappe.db.count("Purchase Receipt", filters={
+        "supplier": supplier, 
+        "docstatus": 0, 
+        "posting_date": [">=", today]
+    })
+
+    delivered = frappe.db.count("Purchase Receipt", filters={
+        "supplier": supplier, 
+        "docstatus": 1, 
+        "status": "Completed"
+    })
+
+    delayed = frappe.db.count("Purchase Receipt", filters={
+        "supplier": supplier, 
+        "docstatus": 0, 
+        "posting_date": ["<", today]
+    })
+
+    delivery_rows = frappe.db.sql("""
+        SELECT 
+            pri.item_name as title,
+            pri.purchase_order as po,
+            pri.qty as quantity,
+            pri.uom as uom,
+            pr.status as receipt_status,
+            pr.name as receipt_id,
+            pr.posting_date as posting_date,
+            pr.dispatch_address_display as dispatch_address
+        FROM `tabPurchase Receipt Item` pri
+        JOIN `tabPurchase Receipt` pr ON pri.parent = pr.name
+        LEFT JOIN `tabPurchase Order` po ON pri.purchase_order = po.name
+        WHERE pr.supplier = %s 
+        AND pr.docstatus < 2
+        ORDER BY pr.posting_date DESC
+    """, (supplier), as_dict=1)
+
+    deliveries_list = []
+    for d in delivery_rows:
+        raw_address = d.get("dispatch_address")
+        clean_address = strip_html(raw_address).replace("\n", ", ") if raw_address else "Address Pending"
+
+        deliveries_list.append({
+            "id": d.receipt_id,
+            "title": d.title,
+            "po": d.po or "N/A",
+            "quantity": f"{float(d.quantity)} {d.uom}", 
+            "status": "Delivered" if d.receipt_status == "Completed" else "In Transit",
+            "scheduled": d.posting_date, 
+            "expected": d.posting_date,
+            "location": clean_address, 
+            "progress": 100 if d.receipt_status == "Completed" else 65,
+            "milestones": [
+                {"name": "Order Confirmed", "completed": True},
+                {"name": "Dispatched", "completed": True},
+                {"name": "Delivered", "completed": True if d.receipt_status == "Completed" else False}
+            ]
+        })
+
+    return {
+        "counts": {
+            "total": total,
+            "in_transit": in_transit,
+            "delivered": delivered,
+            "delayed": delayed
+        },
+        "deliveries": deliveries_list 
+    }
+
+@frappe.whitelist(allow_guest=False)
+def update_delivery_status():
+    data = frappe.request.get_json()
+    
+    receipt_id = data.get("receipt_id")
+    new_status = data.get("status")
+    expected_date = data.get("expected_date")
+    note = data.get("note")
+
+    if not receipt_id:
+        frappe.throw(_("Purchase Receipt ID is missing."))
+
+        frappe.db.set_value("Purchase Receipt", receipt_id, "status", new_status)
+
+        items=frappe.get_all("Purchase Receipt Items",filters={"parent":receipt_id}, fields=["purchase_order"])
+
+        for i in items:
+            if items.purchase_order:
+                frappe.db.set_value("Purchase Order Item",items.purchase_order,{
+                    "expected_delivery_date":"expected_date",
+                    "description":f"{note}" if note else None
+                })
+        frappe.db.commit()
+
+        return {"status": "success"}        
