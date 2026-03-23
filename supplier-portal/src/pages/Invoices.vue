@@ -1,89 +1,172 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { FileText, Download, Eye, Plus, CreditCard, Clock, X, UploadCloud } from 'lucide-vue-next'
+import { ref, computed, onMounted } from 'vue'
+import { useAuthStore } from '../stores/auth'
+import { 
+  FileText, Download, Eye, Plus, CreditCard, 
+  Clock, X, UploadCloud, CheckCircle 
+} from 'lucide-vue-next'
 
-const stats = [
-  { name: 'Total Invoiced', value: '₹20,54,000', change: '+12%', icon: FileText },
-  { name: 'Payments Received', value: '₹3,20,000', change: '+8%', icon: CreditCard },
-  { name: 'Pending Invoices', value: '2', value2: '₹17.34,000', icon: Clock },
-]
+const authStore = useAuthStore()
+const { secureFetch } = authStore
 
-const invoices = ref([
-  {
-    id: 'INV-2024-001',
-    po: 'PO-2023-0125',
-    project: 'Safety Equipment Annual Supply',
-    date: '10 Feb 2024',
-    dueDate: '12 Mar 2024',
-    amount: 750000,
-    tax: 14800,
-    status: 'Approved',
-  },
-  {
-    id: 'INV-2024-002',
-    po: 'PO-2023-0098',
-    project: 'Office Furniture Supply',
-    date: '18 Dec 2023',
-    dueDate: '18 Jan 2024',
-    amount: 320000,
-    tax: 2854,
-    status: 'Paid',
-  },
-   {
-    id: 'INV-2024-003',
-    po: 'PO-2024-0155',
-    project: 'Industrial Steel Plates - Advance',
-    date: '22 Feb 2024',
-    dueDate: '7 Mar 2024',
-    amount: 984000,
-    tax: 110502,
-    status: 'Pending Approval',
-  }
-])
-
+const loading = ref(true)
+const invoices = ref([]) 
+const payments = ref([]) 
 const activeTab = ref('Invoices')
 const tabs = ['Invoices', 'Payments', 'Debit Notes']
 const searchQuery = ref('')
 
-// Upload Modal Logic
 const isUploadModalOpen = ref(false)
-const newInvoice = ref({
-  po: '',
-  number: '',
-  date: '',
-  amount: '',
-  file: null
-})
+const newInvoice = ref({ po: '', number: '', date: '', amount: 0, file: null })
 
-const openUploadModal = () => isUploadModalOpen.value = true
-const closeUploadModal = () => {
-  isUploadModalOpen.value = false
-  newInvoice.value = { po: '', number: '', date: '', amount: '', file: null }
-}
+const downloadInvoice = async (invoice) => {
+  try {
+    const response = await secureFetch(`/api/method/supplier_portal.api.get_invoice_pdf?name=${invoice.id}`);
+    
+    if (!response.ok) throw new Error('Download failed');
 
-const handleFileUpload = (event) => {
-  const file = event.target.files[0]
-  if (file) {
-    newInvoice.value.file = file
+    const blob = await response.blob();
+    
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    
+    link.href = url;
+    link.setAttribute('download', `Invoice_${invoice.id}.pdf`); 
+    
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    
+  } catch (error) {
+    console.error("Standard download failed:", error);
+    alert("Could not download the file. Please try again.");
   }
 }
 
-const submitInvoice = () => {
-  // Mock submission
+const previewInvoice = (invoice) => {
+  const url = `/api/method/supplier_portal.api.get_invoice_pdf?name=${invoice.id}&view=inline`;
+  
+  window.open(url, '_blank');
+};
+
+const fetchInvoices = async () => {
+  try {
+    const response = await secureFetch('/api/method/supplier_portal.api.get_supplier_invoices');
+    const data = await response.json();
+    if (data?.message) invoices.value = data.message;
+  } catch (e) { console.error("Invoice Error:", e); }
+};
+
+const fetchPayments = async () => {
+  try {
+    const response = await secureFetch('/api/method/supplier_portal.api.get_supplier_payments');
+    const data = await response.json();
+    
+    if (data?.message) {
+      payments.value = data.message.map(p => ({
+        id: p.id,
+        date: p.date,
+        amount: p.amount,
+        ref_no: p.ref_no,
+        method: p.method,
+        against_invoice: p.against_invoice
+      }));
+    }
+  } catch (e) { 
+    console.error("Payment Error:", e); 
+    payments.value = []; 
+  }
+};
+
+onMounted(async () => {
+  loading.value = true;
+  await Promise.all([fetchInvoices(), fetchPayments()]);
+  loading.value = false;
+})
+
+// --- Computed Stats ---
+const stats = computed(() => {
+  // Total of all non-return invoices
+  const total = invoices.value
+    .filter(inv => inv.status !== 'Return')
+    .reduce((acc, inv) => acc + (Number(inv.amount) || 0), 0)
+    
+  // Actual payments received from the payments array
+  const paid = payments.value.reduce((acc, pay) => acc + (Number(pay.amount) || 0), 0)
+  
+  // Count invoices that aren't fully paid or returned
+  const pendingCount = invoices.value.filter(inv => inv.status !== 'Paid' && inv.status !== 'Return').length
+
+  return [
+    { name: 'Total Invoiced', value: `₹${total.toLocaleString('en-IN')}`, icon: FileText },
+    { name: 'Payments Received', value: `₹${paid.toLocaleString('en-IN')}`, icon: CreditCard },
+    { name: 'Pending Invoices', value: pendingCount.toString(), icon: Clock },
+  ]
+})
+
+// --- Search Filters ---
+
+// 1. Invoices (Excludes Returns)
+const filteredInvoices = computed(() => {
+  return (invoices.value || []).filter(inv => {
+    const matchesSearch = !searchQuery.value || 
+      inv.id?.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+      inv.supplier_name?.toLowerCase().includes(searchQuery.value.toLowerCase());
+    
+    return matchesSearch && inv.status !== 'Return';
+  });
+});
+
+// 2. Payments
+const filteredPayments = computed(() => {
+  return (payments.value || []).filter(pay => {
+    const query = searchQuery.value.toLowerCase();
+    return !query || 
+      pay.id?.toLowerCase().includes(query) || 
+      pay.against_invoice?.toLowerCase().includes(query);
+  });
+});
+
+// 3. Debit Notes (Only Returns)
+const filteredDebitNotes = computed(() => {
+  return (invoices.value || []).filter(inv => {
+    const matchesSearch = !searchQuery.value || 
+      inv.id?.toLowerCase().includes(searchQuery.value.toLowerCase());
+    
+    return matchesSearch && inv.status === 'Return';
+  });
+});
+
+// --- Modal Actions ---
+const openUploadModal = () => { isUploadModalOpen.value = true }
+const closeUploadModal = () => { isUploadModalOpen.value = false }
+
+const handleFileUpload = (event) => {
+  const file = event.target.files[0]
+  if (file) newInvoice.value.file = file
+}
+
+const submitInvoice = async () => {
   if (!newInvoice.value.number || !newInvoice.value.amount) return
   
-  invoices.value.unshift({
-    id: newInvoice.value.number,
-    po: newInvoice.value.po,
-    project: 'Industrial Steel Plates', // Mock
-    date: newInvoice.value.date || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-    dueDate: 'Pending',
-    amount: parseFloat(newInvoice.value.amount),
-    tax: parseFloat(newInvoice.value.amount) * 0.18,
-    status: 'Pending Approval'
-  })
-  
-  closeUploadModal()
+  try {
+    loading.value = true
+    const response = await secureFetch('/api/method/supplier_portal.api.upload_invoice', {
+      method: 'POST',
+      body: JSON.stringify(newInvoice.value)
+    })
+    
+    const data = await response.json()
+    if (data.message === "success") {
+      await fetchInvoices()
+      closeUploadModal()
+    }
+  } catch (error) {
+    console.error("Upload failed:", error)
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -146,52 +229,126 @@ const submitInvoice = () => {
 
     <!-- Table -->
     <div class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow">
-       <table class="min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-50">
-             <tr>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice #</th>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PO / Tender</th>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Due Date</th>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th scope="col" class="relative px-6 py-3"><span class="sr-only">Actions</span></th>
-             </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-200 bg-white">
-             <tr v-for="inv in invoices" :key="inv.id">
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{{ inv.id }}</td>
-                 <td class="px-6 py-4">
-                    <div class="text-sm font-medium text-gray-900">{{ inv.project }}</div>
-                    <div class="text-xs text-gray-500">{{ inv.po }}</div>
-                 </td>
-                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ inv.date }}</td>
-                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ inv.dueDate }}</td>
-                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                    <div class="font-bold">₹{{ inv.amount.toLocaleString() }}</div>
-                    <div class="text-xs text-gray-400">incl. ₹{{ inv.tax.toLocaleString() }} tax</div>
-                 </td>
-                 <td class="px-6 py-4 whitespace-nowrap">
-                    <span 
-                      class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset"
-                      :class="{
-                         'bg-green-50 text-green-700 ring-green-600/20': inv.status === 'Paid',
-                         'bg-blue-50 text-blue-700 ring-blue-700/10': inv.status === 'Approved',
-                         'bg-orange-50 text-orange-700 ring-orange-600/20': inv.status === 'Pending Approval',
-                      }"
-                    >
-                       {{ inv.status }}
-                    </span>
-                 </td>
-                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <div class="flex items-center justify-end gap-2">
-                       <button class="text-gray-400 hover:text-gray-600"><Eye class="h-4 w-4" /></button>
-                       <button class="text-gray-400 hover:text-gray-600"><Download class="h-4 w-4" /></button>
-                    </div>
-                 </td>
-             </tr>
-          </tbody>
-       </table>
+  
+  <table v-if="activeTab === 'Invoices'" class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice #</th>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PO / Tender</th>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Due Date</th>
+        <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+        <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-200 bg-white">
+      <tr v-for="inv in filteredInvoices" :key="inv.id" class="hover:bg-gray-50 transition-colors">
+        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{{ inv.id }}</td>
+        <td class="px-6 py-4">
+          <div class="text-sm font-semibold text-gray-900">{{ inv.supplier_name }}</div>
+          <div v-if="inv.po" class="text-xs font-bold text-indigo-600 mt-0.5">{{ inv.po }}</div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ inv.date }}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ inv.dueDate }}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+          <div class="font-bold text-gray-900">₹{{ Number(inv.amount).toLocaleString('en-IN') }}</div>
+          <div class="text-xs text-gray-400">incl. ₹{{ Number(inv.tax).toLocaleString('en-IN') }} tax</div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+          <span 
+            class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset"
+            :class="{
+              'bg-green-50 text-green-700 ring-green-600/20': inv.status === 'Paid',
+              'bg-blue-50 text-blue-700 ring-blue-700/10': inv.status === 'Approved',
+              'bg-orange-50 text-orange-700 ring-orange-600/20': ['Pending Approval', 'Unpaid'].includes(inv.status),
+              'bg-gray-50 text-gray-600 ring-gray-500/10': inv.status === 'Return'
+            }"
+          >
+            {{ inv.status }}
+          </span>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+          <div class="flex items-center justify-end gap-3 text-gray-400">
+            <button 
+              @click="previewInvoice(inv)" 
+              class="hover:text-indigo-600 p-1"
+              title="Preview Invoice"
+            >
+              <Eye class="h-4 w-4" />
+            </button>
+            <button 
+              @click="downloadInvoice(inv)" 
+              class="hover:text-indigo-600 p-1"
+              title="Download Invoice"
+            >
+              <Download class="h-4 w-4" />
+            </button>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div v-if="activeTab === 'Payments'" class="p-6 bg-white">
+    <div class="flex items-center gap-2 mb-6">
+      <CreditCard class="h-5 w-5 text-indigo-600" />
+      <h3 class="text-lg font-bold text-gray-900">Payment History</h3>
+    </div>
+
+    <div v-for="pay in filteredPayments" :key="pay.id" class="border rounded-xl p-4 mb-4 hover:bg-gray-50 border-gray-100 shadow-sm transition-all">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <div class="bg-green-100 p-2 rounded-full">
+            <CheckCircle class="h-5 w-5 text-green-600" />
+          </div>
+          <div>
+            <div class="text-sm font-bold text-gray-900">{{ pay.id }}</div>
+            <div class="text-xs text-gray-500">{{ pay.method || 'NEFT' }} • Ref: {{ pay.ref_no || 'N/A' }}</div>
+            <div class="text-xs font-medium text-indigo-600 mt-1">Against: {{ pay.against_invoice }}</div>
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-base font-bold text-green-600">₹{{ Number(pay.amount).toLocaleString('en-IN') }}</div>
+          <div class="text-xs text-gray-400">{{ pay.date }}</div>
+        </div>
+      </div>
+    </div>
+    
+    <div v-if="filteredPayments.length === 0" class="text-center py-12 text-gray-500">
+      No payment records found.
+    </div>
+  </div>
+
+  <table v-if="activeTab === 'Debit Notes'" class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr class="text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th class="px-6 py-3 text-left">Debit Note #</th>
+            <th class="px-6 py-3 text-left">Supplier</th>
+            <th class="px-6 py-3 text-left">Date</th>
+            <th class="px-6 py-3 text-right">Deduction Amount</th>
+            <th class="px-6 py-3 text-left">Status</th>
+            <th class="relative px-6 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 bg-white">
+          <tr v-for="note in filteredDebitNotes" :key="note.id" class="hover:bg-red-50/30 transition-colors">
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-red-600">{{ note.id }}</td>
+            <td class="px-6 py-4 text-sm text-gray-900">{{ note.supplier_name }}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ note.date }}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900">
+               -₹{{ Number(note.amount).toLocaleString('en-IN') }}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20">
+                Returned
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-if="activeTab === 'Debit Notes' && filteredDebitNotes.length === 0" class="p-12 text-center text-gray-500">
+        No Debit Notes found.
+      </div>
     </div>
 
     <!-- Upload Invoice Modal -->

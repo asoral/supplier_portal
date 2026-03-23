@@ -1309,4 +1309,76 @@ def update_delivery_status():
                 })
         frappe.db.commit()
 
-        return {"status": "success"}        
+        return {"status": "success"}     
+
+@frappe.whitelist()
+def get_supplier_invoices():
+    user = frappe.session.user
+    
+    # 1. Get the Supplier ID and Name
+    portal_user = frappe.db.get_value("Portal User", {"user": user}, ["parent"], as_dict=True)
+    
+    if not portal_user:
+        return []
+    
+    supplier_id = portal_user.parent
+    supplier_name = frappe.db.get_value("Supplier", supplier_id, "supplier_name")
+
+    # 2. SQL Join logic to include the Purchase Order from Connections
+    invoices = frappe.db.sql("""
+        SELECT DISTINCT
+            si.name as id,
+            si.posting_date as date,
+            si.due_date as dueDate,
+            si.grand_total as amount,
+            si.total_taxes_and_charges as tax,
+            si.status as status,
+            poi.parent as po,
+            so.project as project,
+            %s as supplier_name  -- Passing the fetched name into the result
+        FROM `tabSales Invoice` si
+        JOIN `tabSales Invoice Item` sii ON sii.parent = si.name
+        JOIN `tabSales Order` so ON sii.sales_order = so.name
+        JOIN `tabSales Order Item` soi ON soi.parent = so.name AND soi.item_code = sii.item_code
+        LEFT JOIN `tabPurchase Order Item` poi ON poi.sales_order = so.name AND poi.item_code = soi.item_code
+        WHERE soi.supplier = %s
+        ORDER BY si.creation DESC
+    """, (supplier_name, supplier_id), as_dict=True)
+
+    return invoices
+
+@frappe.whitelist()
+def get_supplier_payments():
+    user = frappe.session.user
+    
+    supplier_id = frappe.db.get_value("Portal User", {"user": user}, "parent")
+    
+    if not supplier_id:
+        return []
+
+    payments = frappe.get_all("Payment Entry", 
+        filters={
+            "party_type": "Supplier",
+            "party": supplier_id, 
+            "docstatus": 1 
+        },
+        fields=["name as id", "posting_date as date", "paid_amount as amount", 
+                "reference_no as ref_no", "mode_of_payment as method"]
+    )
+    
+    for pay in payments:
+        invoice_ref = frappe.db.get_value("Payment Entry Reference", 
+            {"parent": pay.id}, "reference_name")
+        pay["against_invoice"] = invoice_ref or "Multiple/Advance"
+
+    return payments
+
+@frappe.whitelist()
+def get_invoice_pdf(name, view="download"):
+    pdf_content = frappe.get_print("Sales Invoice", name, as_pdf=True)
+    
+    frappe.response.filename = f"{name}.pdf"
+    frappe.response.filecontent = pdf_content
+
+    frappe.response.type = "pdf"
+    frappe.response.display_content_as = "inline" if view == "inline" else "attachment"
