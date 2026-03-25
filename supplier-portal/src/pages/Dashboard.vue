@@ -33,21 +33,28 @@ const dashboardData = ref({
 const profileCompletion = computed(() => {
     const p = dashboardData.value?.profile;
     if (!p) return 0;
-    
-    const primaryAddr = p.__onload?.addr_list?.[0] || {};
-    const primaryContact = p.__onload?.contact_list?.[0] || {};
 
-    const fields = [
-        p.supplier_name,              // 1. Company Name (Found)
-        p.supplier_type,              // 2. Business Type (Found)
-        p.gstin,                      // 3. GST (Empty -> This is the missing 20%)
-        primaryContact.email_id,      // 4. Email (Nested in __onload)
-        primaryAddr.address_line1     // 5. Address (Nested in __onload)
+    const checkpoints = [
+        { value: p.supplier_name, weight: 10 },
+        { value: p.gst_number, weight: 15 },
+        { value: p.pan_number, weight: 15 },
+        { value: p.website, weight: 10 },
+        { value: p.supplier_details, weight: 10 },
+        { value: p.address?.address_line1, weight: 10 },
+        { value: p.address?.phone, weight: 10 },
+        { value: p.contact?.mobile_no, weight: 10 },
+        { value: p.custom_supplier_documents?.length > 0, weight: 5 },
+        { value: p.custom_supplier_certificates?.length > 0, weight: 5 }
     ];
 
-    const filled = fields.filter(f => f && f !== '' && f !== 'Not Specified').length;
-    
-    return Math.round((filled / fields.length) * 100);
+    const total = checkpoints.reduce((acc, check) => {
+        const isFilled = Array.isArray(check.value) 
+            ? check.value.length > 0 
+            : (check.value && check.value !== '' && check.value !== 'Not Specified');
+        return acc + (isFilled ? check.weight : 0);
+    }, 0);
+
+    return Math.min(total, 100);
 });
 
 const bidHistory = computed(() => {
