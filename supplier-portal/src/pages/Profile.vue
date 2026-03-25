@@ -3,7 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import {
   Building2, FileText, Award, Settings, MapPin, Calendar, CheckCircle,
   Star, Edit2, Download, Upload, Shield, Bell, Lock, Trash2,
-  ShoppingBag, TrendingUp, FileCheck
+  ShoppingBag, TrendingUp, FileCheck, X, UploadCloud, Eye, Loader2
 } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 
@@ -12,33 +12,210 @@ const activeTab = ref('Company')
 const tabs = ['Company', 'Documents', 'Certifications', 'Settings']
 const isLoading = ref(true)
 
-// 1. Profile Data State (to be filled from Backend)
-const profileData = ref(null)
+const isDocModalOpen = ref(false)
+const uploading = ref(false)
+const newDoc = ref({ name: '', file: null, expiry_date: '' })
 
-// --- ADD THIS SECTION ---
-const dashboardData = ref({
-    stats: {
-        total_bids: 0,
-        orders_won: 0,
-        win_rate: '0%',
-        orders_won_value: '0.00'
+const handleDocFileChange = (e) => {
+  newDoc.value.file = e.target.files[0]
+}
+
+const handleUpload = async () => {
+  if (activeTab.value === 'Certifications') {
+    await uploadCertificate()
+  } else {
+    await uploadDocument()
+  }
+}
+
+const uploadDocument = async () => {
+  if (!newDoc.value.name || !newDoc.value.file) {
+    return alert("Please provide a document name and select a file.")
+  }
+
+  uploading.value = true
+  try {
+    const base64Content = await getBase64(newDoc.value.file)
+    const response = await authStore.secureFetch('/api/method/supplier_portal.api.upload_supplier_document', {
+      method: 'POST',
+      body: JSON.stringify({
+        doc_name: newDoc.value.name,
+        filename: newDoc.value.file.name,
+        filedata: base64Content
+      })
+    })
+
+    const res = await response.json()
+    if (res.message === "success") {
+      await fetchProfileData() 
+      closeModal()
     }
+  } catch (error) {
+    console.error("Upload failed:", error)
+    alert("Error uploading document")
+  } finally {
+    uploading.value = false
+  }
+}
+
+const uploadCertificate = async () => {
+  if (!newDoc.value.name || !newDoc.value.file) {
+    return alert("Please provide certificate name and file.")
+  }
+
+  uploading.value = true
+  try {
+    const base64Content = await getBase64(newDoc.value.file)
+    
+    const response = await authStore.secureFetch('/api/method/supplier_portal.api.upload_supplier_certificate', {
+      method: 'POST',
+      body: JSON.stringify({
+        doc_name: newDoc.value.name,
+        filename: newDoc.value.file.name,
+        filedata: base64Content,
+        expiry_date: newDoc.value.expiry_date
+      })
+    })
+
+    const res = await response.json()
+    if (res.message === "success") {
+      await fetchProfileData() 
+      closeModal()
+    }
+  } catch (error) {
+    console.error("Upload failed:", error)
+    alert("Error uploading certificate")
+  } finally {
+    uploading.value = false
+  }
+}
+
+const deleteCertificate = async (certName) => {
+    if (!confirm("Are you sure you want to delete this certificate?")) return;
+
+    try {
+        const getCookie = (name) => {
+            let r = document.cookie.match("\\b" + name + "=([^;]*)\\b");
+            return r ? r[1] : undefined;
+        };
+
+        const params = new URLSearchParams();
+        params.append('certificate_name', certName);
+
+        const response = await fetch('/api/method/supplier_portal.api.delete_supplier_certificate', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Frappe-CSRF-Token': window.csrf_token || getCookie('sid')
+            },
+            body: params
+        });
+        
+        const result = await response.json();
+        
+        if (result.message === "success") {
+            if (typeof supplierData !== 'undefined' && supplierData.value) {
+                supplierData.value.custom_supplier_certificates = supplierData.value.custom_supplier_certificates.filter(
+                    c => c.supplier_certificate_name !== certName
+                );
+            } 
+            else if (typeof profileData !== 'undefined' && profileData.value) {
+                profileData.value.custom_supplier_certificates = profileData.value.custom_supplier_certificates.filter(
+                    c => c.supplier_certificate_name !== certName
+                );
+            }
+            else if (typeof formData !== 'undefined' && formData.value.custom_supplier_certificates) {
+                formData.value.custom_supplier_certificates = formData.value.custom_supplier_certificates.filter(
+                    c => c.supplier_certificate_name !== certName
+                );
+            }
+            else {
+                if (typeof fetchProfileData === 'function') {
+                    fetchProfileData();
+                }
+            }
+        }
+    } catch (error) {
+        console.error("Delete request failed:", error);
+    }
+};
+
+const deleteDocument = async (docName) => {
+    if (!confirm("Are you sure you want to delete this document?")) return;
+
+    try {
+        const getCookie = (name) => {
+            let r = document.cookie.match("\\b" + name + "=([^;]*)\\b");
+            return r ? r[1] : undefined;
+        };
+
+        const params = new URLSearchParams();
+        params.append('doc_entry_name', docName);
+
+        const response = await fetch('/api/method/supplier_portal.api.delete_supplier_document', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Frappe-CSRF-Token': window.csrf_token || getCookie('sid')
+            },
+            body: params
+        });
+        
+        const result = await response.json();
+        
+        if (result.message === "success") {
+            const dataObj = typeof supplierData !== 'undefined' ? supplierData : 
+                            typeof profileData !== 'undefined' ? profileData : null;
+
+            if (dataObj && dataObj.value.custom_supplier_documents) {
+                dataObj.value.custom_supplier_documents = dataObj.value.custom_supplier_documents.filter(
+                    doc => doc.name !== docName
+                );
+            }
+        }
+    } catch (error) {
+        console.error("Document delete failed:", error);
+    }
+};
+
+const closeModal = () => {
+  isDocModalOpen.value = false
+  newDoc.value = { name: '', file: null, expiry_date: '' }
+}
+
+const previewDocument = (fileUrl) => {
+  if (!fileUrl) return alert("No file attached to this document.");
+  const url = fileUrl.startsWith('http') ? fileUrl : window.location.origin + fileUrl;
+  window.open(url, '_blank');
+};
+
+const profileData = ref(null)
+const dashboardData = ref({
+    stats: { total_bids: 0, orders_won: 0, win_rate: '0%', orders_won_value: '0.00' }
 })
-// 2. Form Data (now computed or reactive to profileData)
+
 const formData = ref({
-  companyName: '',
-  businessType: '',
-  gst: '',
-  pan: '',
-  contactEmail: '',
-  contactPhone: '',
-  website: '',
-  address: '',
-  about: '',
-  employees: '',
-  turnover: '',
-  productCategories: []
+  companyName: '', businessType: '', gst: '', pan: '', contactEmail: '',
+  contactPhone: '', website: '', address: '', about: '', employees: '',
+  turnover: '', productCategories: [], AboutCompany: ''
 })
+
+const documents = computed(() => {
+  return profileData.value?.custom_supplier_documents || []
+})
+
+const certifications = computed(() => {
+  return profileData.value?.custom_supplier_certificates || []
+})
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return '';
+  return new Date(dateStr).toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
+}
 
 const profileParams = computed(() => ({
   completion: profileCompletion.value,
@@ -48,38 +225,59 @@ const profileParams = computed(() => ({
         day: '2-digit', month: 'short', year: 'numeric' 
       }) 
     : '...', 
-  // Get city from profileData address if it exists
   location: profileData.value?.address?.city || 'Location not set',
   industry: formData.value.businessType || 'Company',
   verified: true
 }))
 
 const memberSince = computed(() => {
-    const rawDate = dashboardData.value.profile?.creation;
+    const rawDate = profileData.value?.creation;
     if (!rawDate) return '...';
-    
-    // Fixes the "Invalid Date" error by converting to ISO format
     return new Date(rawDate.replace(' ', 'T')).toLocaleDateString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
+        day: '2-digit', month: 'short', year: 'numeric'
     });
 });
 
-// Inside Profile.vue <script setup>
-const isEditing = ref(false)
+const profileCompletion = computed(() => {
+  if (!profileData.value) return 0;
 
+  const fields = [
+    { value: profileData.value.supplier_name, weight: 10 },
+    { value: profileData.value.gst_number, weight: 10 },
+    { value: profileData.value.pan_number, weight: 10 },
+    { value: profileData.value.website, weight: 10 },
+    { value: profileData.value.supplier_details, weight: 15 },
+    { value: profileData.value.address?.address_line1, weight: 15 },
+    { value: profileData.value.contact?.mobile_no, weight: 10 },
+    { value: profileData.value.custom_supplier_documents?.length > 0, weight: 10 },
+    { value: profileData.value.custom_supplier_certificates?.length > 0, weight: 10 }
+  ];
+
+  const total = fields.reduce((acc, field) => {
+    const isComplete = Array.isArray(field.value) ? field.value.length > 0 : !!field.value;
+    return acc + (isComplete ? field.weight : 0);
+  }, 0);
+
+  return Math.min(total, 100);
+});
+
+const isEditing = ref(false)
 const toggleEdit = () => {
-  if (isEditing.value) {
-    // Logic to save data would go here
-    saveProfileData() 
-  }
+  if (isEditing.value) saveProfileData() 
   isEditing.value = !isEditing.value
 }
 
 const saveProfileData = async () => {
-    // You can implement the API call to update the supplier record here later
     console.log("Saving data...", formData.value)
+}
+
+const getBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.readAsDataURL(file)
+    reader.onload = () => resolve(reader.result.split(',')[1])
+    reader.onerror = error => reject(error)
+  })
 }
 
 const fetchProfileData = async () => {
@@ -90,24 +288,21 @@ const fetchProfileData = async () => {
     
     if (result.message) {
       const m = result.message
-      profileData.value = m // Set this first
+      profileData.value = m
       
-      // Update the entire object at once to prevent data loss
       formData.value = {
         companyName: m.supplier_name || '',
         businessType: m.business_type || '',
-        gst: m.gst_number || '', // Note: Python function returned 'gst_number'
-        pan: m.pan_number || '',  // Note: Python function returned 'pan_number'
+        gst: m.gst_number || '',
+        pan: m.pan_number || '',
         contactEmail: m.contact?.email_id || '',
         contactPhone: m.contact?.mobile_no || '',
+        businessPhone: m.address?.phone || '',
         website: m.website || '',
         address: m.address?.address_line1 ? `${m.address.address_line1}, ${m.address.city}` : '',
-        about: m.about_company || '',
+        AboutCompany: m.supplier_details || '',
         employees: m.employee_count || 'Not Specified',
         turnover: m.annual_turnover || 'Not Specified',
-        AboutCompany:m.supplier_details,
-        website:m.website,
-        // ADDED HERE: This prevents the 'blank page' crash
         productCategories: m.product_categories ?? []
       }
     }
@@ -124,39 +319,8 @@ const fetchProfileData = async () => {
   }
 }
 
-const profileCompletion = computed(() => {
-    if (!profileData.value) return 0;
-    
-    // Use the mapped formData values instead of raw profileData
-    // because formData already handled the nesting logic
-    const fields = [
-        formData.value.companyName,
-        formData.value.businessType,
-        formData.value.address,
-        formData.value.contactEmail,
-        formData.value.gst
-    ];
-    
-    const filled = fields.filter(f => f && f !== '' && f !== 'Not Specified').length;
-    return Math.round((filled / fields.length) * 100);
-});
-
-const documents = ref([
-  { name: 'Company Registration Certificate', date: '15 Jan 2024', type: 'pdf' },
-  { name: 'GST Certificate', date: '15 Jan 2024', type: 'pdf' }
-])
-
-const certifications = ref([
-  { name: 'ISO 9001:2015', validUntil: '15 Dec 2025', status: 'Active' },
-  { name: 'GST Registered', validUntil: '', status: 'Active' },
-])
-
 const settings = ref({
-  newTender: true,
-  bidStatus: true,
-  deadlines: true,
-  orderUpdates: false,
-  weeklyDigest: false
+  newTender: true, bidStatus: true, deadlines: true, orderUpdates: false, weeklyDigest: false
 })
 
 onMounted(fetchProfileData)
@@ -374,7 +538,7 @@ onMounted(fetchProfileData)
                
                <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">About Company</label>
-                  <textarea rows="3" v-model="formData.about" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all"></textarea>
+                  <textarea rows="3" v-model="formData.AboutCompany" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all"></textarea>
                </div>
                
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -397,7 +561,14 @@ onMounted(fetchProfileData)
                      </div>
                      <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                        <input type="text" v-model="formData.contactPhone" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all" />
+                        <input 
+                           type="text" 
+                           v-model="profileData.address.phone" 
+                           :disabled="!isEditing" 
+                           :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" 
+                           class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all" 
+                           placeholder="No office phone set"
+                     />
                      </div>
                      <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Website</label>
@@ -426,59 +597,107 @@ onMounted(fetchProfileData)
          </div>
 
          <!-- Documents Tab -->
-         <div v-show="activeTab === 'Documents'" class="space-y-6 animate-fade-in">
-             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div class="flex items-center justify-between mb-6">
-                   <h3 class="text-sm font-bold text-gray-900 flex items-center gap-2"><FileText class="h-4 w-4 text-gray-500" /> Uploaded Documents</h3>
-                   <button class="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500">
-                      <Upload class="h-3 w-3" /> Upload New
-                   </button>
-                </div>
+     <div v-show="activeTab === 'Documents'" class="space-y-6 animate-fade-in">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+       <div class="flex items-center justify-between mb-6">
+          <h3 class="text-sm font-bold text-gray-900 flex items-center gap-2">
+            <FileText class="h-4 w-4 text-gray-500" /> Uploaded Documents
+          </h3>
+          <button @click="isDocModalOpen = true" class="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 transition-all">
+             <Upload class="h-3 w-3" /> Upload New
+          </button>
+       </div>
 
-                <div class="space-y-3">
-                   <div v-for="(doc, idx) in documents" :key="idx" class="flex items-center justify-between p-4 rounded-lg border border-gray-100 hover:border-indigo-100 hover:bg-indigo-50/30 transition-colors group">
-                      <div class="flex items-center gap-4">
-                         <div class="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600">
-                            <FileText class="h-5 w-5" />
-                         </div>
-                         <div>
-                            <p class="text-sm font-medium text-gray-900">{{ doc.name }}</p>
-                            <p class="text-xs text-gray-500">Uploaded on {{ doc.date }}</p>
-                         </div>
-                      </div>
-                      <div class="flex items-center gap-2">
-                         <button class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-white rounded-full transition-colors"><View class="h-4 w-4" /></button>
-                         <button class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-white rounded-full transition-colors"><Download class="h-4 w-4" /></button>
-                      </div>
-                   </div>
+       <div class="space-y-3">
+          <div v-for="(doc, idx) in documents" :key="idx" class="flex items-center justify-between p-4 rounded-lg border border-gray-100 hover:border-indigo-100 hover:bg-indigo-50/30 transition-colors group">
+             <div class="flex items-center gap-4">
+                <div class="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600">
+                   <FileText class="h-5 w-5" />
+                </div>
+                <div>
+                   <p class="text-sm font-medium text-gray-900">{{ doc.document_name }}</p>
+                   <p class="text-xs text-gray-500">Uploaded on {{ doc.date }}</p>
                 </div>
              </div>
-         </div>
+             <div class="flex items-center gap-2">
+                <button 
+                     @click="deleteDocument(doc.name)" 
+                     class="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                     title="Delete Document"
+                  >
+                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                     </svg>
+                  </button>
+                <a :href="doc.file" download class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-white rounded-full transition-colors">
+                  <Download class="h-4 w-4" />
+                </a>
+             </div>
+          </div>
+          
+          <div v-if="!documents.length" class="text-center py-10 border-2 border-dashed border-gray-100 rounded-xl text-gray-400 text-sm">
+             No documents uploaded yet.
+          </div>
+       </div>
+    </div>
+</div>
 
          <!-- Certifications Tab -->
          <div v-show="activeTab === 'Certifications'" class="space-y-6 animate-fade-in">
-             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div class="flex items-center justify-between mb-6">
-                   <h3 class="text-sm font-bold text-gray-900 flex items-center gap-2"><Award class="h-4 w-4 text-gray-500" /> Certifications & Compliance</h3>
-                   <button class="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500">
-                      <Upload class="h-3 w-3" /> Add Certificate
-                   </button>
-                </div>
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+       <div class="flex items-center justify-between mb-6">
+          <h3 class="text-sm font-bold text-gray-900 flex items-center gap-2">
+            <Award class="h-4 w-4 text-gray-500" /> Certifications & Compliance
+          </h3>
+          <button @click="isDocModalOpen = true" class="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500">
+             <Upload class="h-3 w-3" /> Add Certificate
+          </button>
+       </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   <div v-for="(cert, idx) in certifications" :key="idx" class="p-4 rounded-lg border border-gray-200 hover:border-indigo-200 transition-colors">
-                      <div class="flex items-start justify-between mb-2">
-                         <div class="flex items-center gap-2">
-                            <Award class="h-5 w-5 text-indigo-600" />
-                            <span class="text-sm font-medium text-gray-900">{{ cert.name }}</span>
-                         </div>
-                         <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">{{ cert.status }}</span>
-                      </div>
-                      <p class="text-xs text-gray-500 ml-7" v-if="cert.validUntil">Valid until {{ cert.validUntil }}</p>
-                   </div>
+       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div v-for="(cert, idx) in certifications" :key="idx" 
+     class="p-4 rounded-xl border border-gray-100 bg-white hover:border-indigo-100 transition-all shadow-sm group relative">
+    
+    <div class="flex items-start justify-between">
+        <div class="flex items-start gap-3">
+            <div class="mt-1 p-2 rounded-lg bg-indigo-50 text-indigo-600">
+                <Shield class="h-5 w-5" />
+            </div>
+            
+            <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-bold text-gray-900 leading-none">
+                     {{ cert.supplier_certificate_name || cert.supplier_certificate || 'Unnamed Certificate' }}
+                  </span>
                 </div>
-             </div>
-         </div>
+                
+                <div class="flex items-center gap-1.5 text-xs text-gray-500">
+                    <Calendar class="h-3 w-3" />
+                    {{ cert.expiry_date ? 'Valid until ' + formatDate(cert.expiry_date) : 'Life-time Validity' }}
+                </div>
+            </div>
+        </div>
+
+        <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-1 text-[10px] font-bold text-green-700 ring-1 ring-inset ring-green-600/20">
+            <button 
+                  @click="deleteCertificate(cert.supplier_certificate_name)"
+                  class="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200"
+                  title="Delete Certificate"
+               >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+               </button>
+        </span>
+    </div>
+    </div>
+          
+          <div v-if="!certifications.length" class="col-span-full text-center py-10 border-2 border-dashed border-gray-100 rounded-xl text-gray-400 text-sm">
+             No certifications found.
+          </div>
+       </div>
+    </div>
+</div>
 
          <!-- Settings Tab -->
          <div v-show="activeTab === 'Settings'" class="space-y-6 animate-fade-in">
@@ -568,4 +787,119 @@ onMounted(fetchProfileData)
     </div>
 
   </div>
+  <div v-if="isDocModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="fixed inset-0 bg-gray-500/75 backdrop-blur-sm" @click="isDocModalOpen = false"></div>
+  
+  <div class="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6 overflow-hidden animate-in fade-in zoom-in duration-200">
+    <div class="flex justify-between items-center mb-6">
+      <h3 class="text-lg font-bold text-gray-900">Upload New Document</h3>
+      <button @click="isDocModalOpen = false" class="text-gray-400 hover:text-gray-500">
+        <X class="h-5 w-5" />
+      </button>
+    </div>
+
+    <div class="space-y-5">
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Document Name</label>
+        <input 
+          v-model="newDoc.name" 
+          type="text" 
+          placeholder="e.g. GST Certificate"
+          class="w-full rounded-lg border-gray-200 text-sm focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
+        />
+      </div>
+
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Attachment</label>
+        <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-200 border-dashed rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
+          <div class="space-y-1 text-center">
+            <UploadCloud class="mx-auto h-10 w-10 text-gray-400" />
+            <div class="flex text-sm text-gray-600 justify-center">
+              <label class="relative cursor-pointer font-semibold text-indigo-600 hover:text-indigo-500">
+                <span>Select a file</span>
+                <input type="file" class="sr-only" @change="handleDocFileChange" />
+              </label>
+            </div>
+            <p v-if="newDoc.file" class="text-xs text-indigo-600 font-bold mt-2">
+              {{ newDoc.file.name }}
+            </p>
+            <p v-else class="text-xs text-gray-400">PDF, PNG, JPG up to 10MB</p>
+          </div>
+        </div>
+      </div>
+
+      <button 
+        @click="uploadDocument" 
+        :disabled="uploading"
+        class="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-bold text-sm shadow-sm hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+      >
+        <Loader2 v-if="uploading" class="h-4 w-4 animate-spin" />
+        {{ uploading ? 'Uploading...' : 'Upload Document' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<div v-if="isDocModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="fixed inset-0 bg-gray-500/75 backdrop-blur-sm" @click="isDocModalOpen = false"></div>
+  
+  <div class="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6 overflow-hidden animate-in fade-in zoom-in duration-200">
+    <div class="flex justify-between items-center mb-6">
+      <h3 class="text-lg font-bold text-gray-900">
+        {{ activeTab === 'Certifications' ? 'Upload New Certificate' : 'Upload New Document' }}
+      </h3>
+      <button @click="isDocModalOpen = false" class="text-gray-400 hover:text-gray-500">
+        <X class="h-5 w-5" />
+      </button>
+    </div>
+
+    <div class="space-y-5">
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Certificate Name</label>
+        <input 
+          v-model="newDoc.name" 
+          type="text" 
+          placeholder="e.g. ISO 9001 Certificate"
+          class="w-full rounded-lg border-gray-200 text-sm focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
+        />
+      </div>
+
+      <div v-if="activeTab === 'Certifications'">
+        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Expiry Date (Optional)</label>
+        <input 
+          v-model="newDoc.expiry_date" 
+          type="date" 
+          class="w-full rounded-lg border-gray-200 text-sm focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
+        />
+      </div>
+
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Attachment</label>
+        <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-200 border-dashed rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
+          <div class="space-y-1 text-center">
+            <UploadCloud class="mx-auto h-10 w-10 text-gray-400" />
+            <div class="flex text-sm text-gray-600 justify-center">
+              <label class="relative cursor-pointer font-semibold text-indigo-600 hover:text-indigo-500">
+                <span>Select a file</span>
+                <input type="file" class="sr-only" @change="handleDocFileChange" />
+              </label>
+            </div>
+            <p v-if="newDoc.file" class="text-xs text-indigo-600 font-bold mt-2">{{ newDoc.file.name }}</p>
+            <p v-else class="text-xs text-gray-400">PDF, PNG, JPG up to 10MB</p>
+          </div>
+        </div>
+      </div>
+
+      <button 
+        @click="activeTab === 'Certifications' ? uploadCertificate() : uploadDocument()" 
+        :disabled="uploading"
+        class="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-bold text-sm shadow-sm hover:bg-indigo-700 disabled:bg-gray-300 transition-all flex items-center justify-center gap-2"
+      >
+        <Loader2 v-if="uploading" class="h-4 w-4 animate-spin" />
+        {{ uploading ? 'Uploading...' : (activeTab === 'Certifications' ? 'Upload Certificate' : 'Upload Document') }}
+      </button>
+    </div>
+  </div>
+</div>
+
 </template>
