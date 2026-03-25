@@ -2,6 +2,7 @@ import frappe
 from frappe import _
 from frappe.query_builder.functions import Sum
 from frappe.utils import nowdate, strip_html
+from frappe.utils.file_manager import save_file
 
 @frappe.whitelist(allow_guest=True)
 def register_vendor(company_name, email, contact_person, phone, gst=None, password=None):
@@ -1168,7 +1169,11 @@ def get_supplier_profile():
         "member_since": supplier_doc.creation,
         "product_categories": product_categories,
         "supplier_details":supplier_doc.supplier_details,
-        "website":supplier_doc.website
+        "website":supplier_doc.website,
+        "annual_turnover": supplier_doc.custom_annual_turnover,
+        "employee_count": supplier_doc.custom_employee_count,
+        "custom_supplier_documents": supplier_doc.get("custom_supplier_documents") or [],
+        "custom_supplier_certificates": supplier_doc.get("custom_supplier_certificates") or []
         }
 
 def get_supplier_categories(supplier_name):
@@ -1382,3 +1387,137 @@ def get_invoice_pdf(name, view="download"):
 
     frappe.response.type = "pdf"
     frappe.response.display_content_as = "inline" if view == "inline" else "attachment"
+
+
+import frappe
+from frappe import _
+from frappe.utils.file_manager import save_file
+
+@frappe.whitelist()
+def upload_supplier_document(doc_name, filename, filedata):
+    user = frappe.session.user
+    supplier_id = frappe.db.get_value("Portal User", {"user": user}, "parent")
+    
+    if not supplier_id:
+        frappe.throw(_("Supplier profile not found."))
+
+    try:
+        file_doc = save_file(filename, filedata, "Supplier", supplier_id, is_private=1)
+
+        new_entry = frappe.get_doc({
+            "doctype": "Supplier Document",
+            "document_name": doc_name, 
+            "supplier": supplier_id,
+            "document": file_doc.file_url,
+            "upload_date": frappe.utils.nowdate()
+        })
+        
+        new_entry.name = frappe.model.naming.make_autoname("hash") 
+
+        new_entry.insert(ignore_permissions=True)
+
+        supplier = frappe.get_doc("Supplier", supplier_id)
+        supplier.append("custom_supplier_documents", {
+            "document_name": doc_name,
+            "file": file_doc.file_url,
+            "date": frappe.utils.nowdate()
+        })
+        
+        supplier.save(ignore_permissions=True)
+        frappe.db.commit()
+
+        return "success"
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), _("Document Upload Error"))
+        return {"message": "error", "reason": str(e)}
+
+
+@frappe.whitelist()
+def upload_supplier_certificate(doc_name, filename, filedata, expiry_date=None):
+    user = frappe.session.user
+    supplier_id = frappe.db.get_value("Portal User", {"user": user}, "parent")
+    
+    if not supplier_id:
+        frappe.throw(_("Supplier profile not found."))
+
+    try:
+        if not filedata:
+            return {"message": "error", "reason": "No file data received."}
+
+        file_doc = save_file(filename, filedata, "Supplier", supplier_id, is_private=1)
+
+        cert_entry = frappe.get_doc({
+            "doctype": "Supplier Certificates",
+            "supplier_certificate_name": doc_name,
+            "supplier": supplier_id,
+            "expiry_date": expiry_date,
+            "certificates": file_doc.file_url,
+            "status": "Active"
+        })
+        cert_entry.insert(ignore_permissions=True)
+
+        supplier = frappe.get_doc("Supplier", supplier_id)
+        supplier.append("custom_supplier_certificates", {
+            "supplier_certificate_name": cert_entry.name, 
+            "file": file_doc.file_url,
+            "expiry_date": expiry_date,
+            "status": "Active"
+        })
+        
+        supplier.save(ignore_permissions=True)
+        frappe.db.commit()
+
+        return "success"
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), _("Certificate Upload Error"))
+        return {"message": "error", "reason": str(e)}
+    
+@frappe.whitelist()
+def delete_supplier_certificate(certificate_name):
+    user = frappe.session.user
+    supplier_id = frappe.db.get_value("Portal User", {"user": user}, "parent")
+    
+    if not supplier_id:
+        frappe.throw(_("Unauthorized access."))
+
+    try:
+        frappe.db.sql("""
+            DELETE FROM `tabSupplier Certificate Items` 
+            WHERE parent = %s AND supplier_certificate_name = %s
+        """, (supplier_id, certificate_name))
+
+        if frappe.db.exists("Supplier Certificates", certificate_name):
+            frappe.delete_doc("Supplier Certificates", certificate_name, ignore_permissions=True)
+
+        frappe.db.commit()
+        return "success"
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), _("Delete Certificate Error"))
+        return {"message": "error", "reason": str(e)}
+    
+
+@frappe.whitelist()
+def delete_supplier_document(doc_entry_name):
+    user = frappe.session.user
+    supplier_id = frappe.db.get_value("Portal User", {"user": user}, "parent")
+    
+    if not supplier_id:
+        frappe.throw(_("Unauthorized access."))
+
+    try:
+    
+        frappe.db.sql("""
+            DELETE FROM `tabSupplier Document Item` 
+            WHERE parent = %s AND name = %s
+        """, (supplier_id, doc_entry_name))
+
+        if frappe.db.exists("Supplier Document", doc_entry_name):
+            frappe.delete_doc("Supplier Document", doc_entry_name, ignore_permissions=True)
+
+        frappe.db.commit()
+        return "success"
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), _("Delete Document Error"))
+        return {"message": "error", "reason": str(e)}
