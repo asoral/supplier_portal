@@ -1521,3 +1521,25 @@ def delete_supplier_document(doc_entry_name):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), _("Delete Document Error"))
         return {"message": "error", "reason": str(e)}
+
+@frappe.whitelist()
+def delete_portal_account():
+    user = frappe.session.user
+    
+    if user == "Administrator" or user == "Guest":
+        frappe.throw("Invalid user for this operation.")
+
+    user_doc = frappe.get_doc("User", user)
+    user_doc.enabled = 0
+    user_doc.save(ignore_permissions=True)
+
+    supplier_name = frappe.db.get_value("Supplier", {"email_id": user}, "name")
+    
+    if supplier_name:
+        supp_doc = frappe.get_doc("Supplier", supplier_name)
+        supp_doc.disabled = 1
+        supp_doc.save(ignore_permissions=True)
+    
+    frappe.local.login_manager.logout()
+    
+    return True
