@@ -387,7 +387,7 @@ const clearFilters = () => {
             >
             <Bookmark class="h-4 w-4" /> 
             <span>Saved ({{ totalSavedCount }})</span>
-         </button>
+         </button>         
             <button 
             @click="openAlertModal"
             class="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
@@ -623,7 +623,7 @@ const clearFilters = () => {
             <TenderCard v-for="tender in filteredTenders" :key="tender.id" :tender="tender" :view-mode="viewMode" />
          </div>
 
-      </div>
+        </div>
     </div>
   <div v-if="showAlertModal" class="fixed inset-0 z-[100] overflow-y-auto">
   <div class="flex min-h-full items-center justify-center p-4 text-center sm:p-0">

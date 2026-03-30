@@ -1523,6 +1523,61 @@ def delete_supplier_document(doc_entry_name):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), _("Delete Document Error"))
         return {"message": "error", "reason": str(e)}
+    
+@frappe.whitelist()
+def create_tender_alert(payload):
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+        
+    user = frappe.session.user
+    
+    supplier_id = frappe.db.get_value("Portal User", {"user": user}, "parent")
+    
+    if not supplier_id:
+        supplier_id = frappe.db.get_value("Supplier", {"supplier_name": "Test Supplier"}, "name")
+
+    if not supplier_id:
+        frappe.throw(_("Supplier link not found. Please link your user to a Supplier in the Desk."))
+
+    selected_cats = payload.get("selected_categories", [])
+    clean_cats = [c for c in selected_cats if c != "All"]
+
+    doc = frappe.get_doc({
+        "doctype": "Tender Alert",
+        "supplier": supplier_id,
+        "alert_name": payload.get("alert_name"),
+        "budget_max": payload.get("budget_max"),
+        "categories": ", ".join(clean_cats) if clean_cats else "General"
+    })
+    doc.insert(ignore_permissions=True) 
+    
+    create_portal_notification(doc)
+    
+    return doc.name
+
+def create_portal_notification(alert_doc):
+    frappe.get_doc({
+        "doctype": "Supplier Portal Notification", 
+        "for_user": frappe.session.user,           
+        "title": _("Alert Created"),               
+        "type": "Alert",                           
+        "message": _("We will notify you about tenders in {0}").format(alert_doc.categories),
+        "read": 0                                 
+    }).insert(ignore_permissions=True)
+
+@frappe.whitelist()
+def get_my_notifications():
+    notifications = frappe.get_all("Supplier Portal Notification",
+        filters={"for_user": frappe.session.user},
+        fields=["name", "title", "message", "type", "read", "creation"],
+        order_by="creation desc",
+        limit=10
+    )
+    
+    for n in notifications:
+        n["time_ago"] = frappe.utils.pretty_date(n.creation)
+        
+    return notifications
 
 @frappe.whitelist()
 def delete_portal_account():
