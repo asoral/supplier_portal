@@ -46,6 +46,177 @@ const fetchTotalSavedCount = async () => {
     console.error("Error updating saved count:", error);
   }
 }
+const createAlert = () => {
+    // 1. Reference the global frappe object
+    const frappe = window.frappe;
+
+    if (!frappe || !frappe.ui || !frappe.ui.Dialog) {
+        console.error("Frappe UI Dialog is not available.");
+        return;
+    }
+
+    // Fallback for translation function if window.__ is missing
+    const _t = window.__ || ((s) => s);
+
+    const d = new frappe.ui.Dialog({
+        title: _t('Set Tender Alert'),
+        fields: [
+            {
+                label: _t('Alert Name'),
+                fieldname: 'alert_name',
+                fieldtype: 'Data',
+                placeholder: 'e.g., Raw Materials Tenders',
+                reqd: 1
+            },
+            {
+                label: _t('Categories'),
+                fieldname: 'categories',
+                fieldtype: 'MultiSelectPills',
+                // Updated to use dynamic categories if available, otherwise fallback
+                options: categories.value.map(c => c.name).filter(n => n !== 'All'),
+                reqd: 1
+            },
+            { fieldtype: 'Section Break', label: _t('Budget Range') },
+            {
+                label: _t('Min Budget (₹)'),
+                fieldname: 'budget_min',
+                fieldtype: 'Currency',
+                default: 0.00
+            },
+            {
+                label: _t('Max Budget (₹)'),
+                fieldname: 'budget_max',
+                fieldtype: 'Currency',
+                placeholder: '5.0Cr'
+            },
+            { fieldtype: 'Section Break' },
+            {
+                label: _t('Keywords (Optional)'),
+                fieldname: 'keywords',
+                fieldtype: 'Small Text',
+                placeholder: 'e.g., steel, pipes, valves'
+            },
+            { fieldtype: 'Section Break', label: _t('Notification Channels') },
+            { label: _t('Email Notifications'), fieldname: 'email_notif', fieldtype: 'Check', default: 1 },
+            { label: _t('Push Notifications'), fieldname: 'push_notif', fieldtype: 'Check', default: 1 },
+            {
+                label: _t('Alert Frequency'),
+                fieldname: 'frequency',
+                fieldtype: 'Select',
+                options: ['Instant', 'Daily', 'Weekly'],
+                default: 'Instant'
+            }
+        ],
+        primary_action_label: _t('Create Alert'),
+        primary_action(values) {
+            frappe.call({
+                method: "supplier_portal.api.create_tender_alert", 
+                args: {
+                    payload: values
+                },
+                callback: (r) => {
+                    if (!r.exc) {
+                        frappe.show_alert({
+                            message: _t('Alert Created Successfully'), 
+                            indicator: 'green'
+                        });
+                        d.hide();
+                    }
+                }
+            });
+        },
+        secondary_action_label: _t('Cancel'),
+        secondary_action() {
+            d.hide();
+        }
+    });
+
+    d.show();
+};
+
+const showAlertModal = ref(false);
+
+const alertForm = ref({
+  alert_name: '',
+  selected_categories: [], 
+  channels: {
+    email: true,
+    push: true,
+    sms: false
+  },
+  frequency: 'Instant'
+});
+
+const openAlertModal = () => {
+  alertForm.value = {
+    alert_name: '',
+    selected_categories: [], 
+    budget_max: 50000000,
+    keywords: '',
+    channels: { email: true, push: true, sms: false },
+    frequency: 'Instant'
+  };
+  showAlertModal.value = true;
+};
+
+const toggleCategory = (catName) => {
+  const index = alertForm.value.selected_categories.indexOf(catName);
+  if (index > -1) {
+    alertForm.value.selected_categories.splice(index, 1);
+  } else {
+    alertForm.value.selected_categories.push(catName);
+  }
+};
+const getCookie = (name) => {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+  return null;
+};
+
+const submitAlert = async () => {
+  if (!alertForm.value.alert_name) {
+    alert("Please provide an alert name");
+    return;
+  }
+
+  try {
+    const response = await authStore.secureFetch('/api/method/supplier_portal.api.create_tender_alert', {
+      method: 'POST',
+      body: JSON.stringify({ payload: alertForm.value })
+    });
+    
+    const result = await response.json();
+    
+    if (result.message) {
+      showAlertModal.value = false;
+      window.dispatchEvent(new CustomEvent('notification-updated'));
+      alert("Tender alert created successfully!");
+    }
+  } catch (error) {
+    console.error("Submission failed:", error);
+  }
+};
+
+const notifications = ref([]);
+const loading = ref(false);
+
+const fetchNotifications = async () => {
+  loading.value = true;
+  try {
+    const response = await fetch('/api/method/supplier_portal.api.get_my_notifications');
+    const data = await response.json();
+    notifications.value = data.message || [];
+  } catch (error) {
+    console.error("Error fetching notifications:", error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+onMounted(() => {
+  fetchNotifications();
+});
 
 const getPriorityActiveClasses = (priority) => {
    const mapping = {
@@ -217,7 +388,10 @@ const clearFilters = () => {
             <Bookmark class="h-4 w-4" /> 
             <span>Saved ({{ totalSavedCount }})</span>
          </button>
-         <button class="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
+            <button 
+            @click="openAlertModal"
+            class="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+         >
             <Bell class="h-4 w-4" /> Set Alert
          </button>
       </div>
@@ -451,5 +625,93 @@ const clearFilters = () => {
 
       </div>
     </div>
+  <div v-if="showAlertModal" class="fixed inset-0 z-[100] overflow-y-auto">
+  <div class="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
+    <div class="fixed inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity" @click="showAlertModal = false"></div>
+
+    <div class="relative transform overflow-hidden rounded-2xl bg-white p-6 text-left shadow-2xl transition-all sm:w-full sm:max-w-lg border border-gray-100">
+      
+      <div class="flex items-start justify-between mb-1">
+        <div>
+          <h3 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+             <Bell class="h-5 w-5 text-blue-600" /> Set Tender Alert
+          </h3>
+          <p class="text-sm text-gray-500 mt-1">Get notified when new tenders matching your criteria are posted.</p>
+        </div>
+        <button @click="showAlertModal = false" class="text-gray-400 hover:text-gray-600 p-1">
+          <X class="h-5 w-5" />
+        </button>
+      </div>
+
+      <div class="mt-6 space-y-6 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+        <div>
+          <label class="block text-sm font-bold text-gray-900 mb-2">Alert Name *</label>
+          <input v-model="alertForm.alert_name" type="text" placeholder="e.g., Raw Materials Tenders" 
+                 class="w-full rounded-xl border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 border p-3 text-sm transition-all" />
+        </div>
+
+        <div>
+          <label class="block text-sm font-bold text-gray-900 mb-2">Categories *</label>
+          <div class="flex flex-wrap gap-2">
+            <button v-for="cat in categories.filter(c => c.name !== 'All')" :key="cat.name"
+                    @click="toggleCategory(cat.name)"
+                    :class="[alertForm.selected_categories.includes(cat.name) 
+                             ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100' 
+                             : 'bg-white text-gray-600 border-gray-200 hover:border-blue-400 hover:text-blue-600']"
+                    class="px-4 py-1.5 rounded-full text-xs font-semibold border transition-all">
+              {{ cat.name }}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex justify-between items-center mb-3">
+            <label class="text-sm font-bold text-gray-900 flex items-center gap-1">
+              <span class="text-gray-500 text-lg">₹</span> Budget Range
+            </label>
+            <span class="text-sm font-bold text-blue-600">₹{{ (alertForm.budget_max / 10000000).toFixed(1) }}Cr</span>
+          </div>
+          <input type="range" v-model="alertForm.budget_max" min="100000" max="50000000" step="500000" 
+                 class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
+          <div class="flex justify-between mt-2 text-[10px] font-bold text-gray-400 uppercase tracking-tighter">
+            <span>₹0K</span>
+            <span>₹5.0Cr</span>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-bold text-gray-900 mb-3">Notification Channels</label>
+          <div class="space-y-3">
+            <label v-for="(val, key) in alertForm.channels" :key="key" class="flex items-center gap-3 cursor-pointer group">
+              <div class="relative flex items-center">
+                <input type="checkbox" v-model="alertForm.channels[key]" class="h-5 w-5 rounded-full border-gray-300 text-blue-600 focus:ring-blue-500 transition-all" />
+              </div>
+              <span class="text-sm font-medium text-gray-700 group-hover:text-gray-900 capitalize">{{ key }} Notifications</span>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-bold text-gray-900 mb-3">Alert Frequency</label>
+          <div class="flex p-1 bg-gray-100 rounded-xl gap-1">
+            <button v-for="freq in ['Instant', 'Daily', 'Weekly']" :key="freq"
+                    @click="alertForm.frequency = freq"
+                    :class="[alertForm.frequency === freq ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-white/50']"
+                    class="flex-1 py-2 text-sm font-bold rounded-lg transition-all border border-transparent">
+              {{ freq }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-8 flex gap-3">
+        <button @click="showAlertModal = false" class="flex-1 px-4 py-3 text-sm font-bold text-gray-600 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">Cancel</button>
+        <button @click="submitAlert" class="flex-1 px-4 py-3 text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2 active:scale-[0.98]">
+          <Bell class="h-4 w-4" /> Create Alert
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
   </div>
 </template>
