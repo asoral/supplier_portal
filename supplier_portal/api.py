@@ -1525,64 +1525,23 @@ def delete_supplier_document(doc_entry_name):
         return {"message": "error", "reason": str(e)}
 
 @frappe.whitelist()
-def create_tender_alert(payload):
-    # 1. Safety check for payload format
-    if isinstance(payload, str):
-        payload = json.loads(payload)
-        
+def delete_portal_account():
     user = frappe.session.user
     
-    # 2. Link User to Supplier
-    supplier_id = frappe.db.get_value("Portal User", {"user": user}, "parent")
+    if user == "Administrator" or user == "Guest":
+        frappe.throw("Invalid user for this operation.")
+
+    user_doc = frappe.get_doc("User", user)
+    user_doc.enabled = 0
+    user_doc.save(ignore_permissions=True)
+
+    supplier_name = frappe.db.get_value("Supplier", {"email_id": user}, "name")
     
-    # Fallback for local testing
-    if not supplier_id:
-        supplier_id = frappe.db.get_value("Supplier", {"supplier_name": "Test Supplier"}, "name")
-
-    if not supplier_id:
-        frappe.throw(_("Supplier link not found. Please link your user to a Supplier in the Desk."))
-
-    # 3. Clean Categories (Filter out 'All' if it exists in the array)
-    selected_cats = payload.get("selected_categories", [])
-    clean_cats = [c for c in selected_cats if c != "All"]
-
-    # 4. Create Tender Alert
-    doc = frappe.get_doc({
-        "doctype": "Tender Alert",
-        "supplier": supplier_id,
-        "alert_name": payload.get("alert_name"),
-        "budget_max": payload.get("budget_max"),
-        "categories": ", ".join(clean_cats) if clean_cats else "General"
-    })
-    doc.insert(ignore_permissions=True) # Usually safer in portals
+    if supplier_name:
+        supp_doc = frappe.get_doc("Supplier", supplier_name)
+        supp_doc.disabled = 1
+        supp_doc.save(ignore_permissions=True)
     
-    # 5. Trigger the Bell Icon notification
-    create_portal_notification(doc)
+    frappe.local.login_manager.logout()
     
-    return doc.name
-
-def create_portal_notification(alert_doc):
-    # Ensure this matches your exact Doctype name: "Supplier Portal Notification"
-    frappe.get_doc({
-        "doctype": "Supplier Portal Notification", 
-        "for_user": frappe.session.user,           
-        "title": _("Alert Created"),               
-        "type": "Alert",                           
-        "message": _("We will notify you about tenders in {0}").format(alert_doc.categories),
-        "read": 0                                 
-    }).insert(ignore_permissions=True)
-
-@frappe.whitelist()
-def get_my_notifications():
-    notifications = frappe.get_all("Supplier Portal Notification",
-        filters={"for_user": frappe.session.user},
-        fields=["name", "title", "message", "type", "read", "creation"],
-        order_by="creation desc",
-        limit=10
-    )
-    
-    for n in notifications:
-        # This provides the "7m ago" or "2h ago" string for your Vue template
-        n["time_ago"] = frappe.utils.pretty_date(n.creation)
-        
-    return notifications
+    return True

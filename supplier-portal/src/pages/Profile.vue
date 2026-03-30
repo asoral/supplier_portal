@@ -261,6 +261,22 @@ const profileCompletion = computed(() => {
   return Math.min(total, 100);
 });
 
+const handleDeleteAccount = () => {
+    const confirmation = confirm("Are you sure you want to delete your account? This action cannot be undone.");
+    
+    if (confirmation) {
+        frappe.call({
+            method: "your_app.your_module.api.delete_portal_account",
+            callback: function(r) {
+                if (r.message) {
+                    alert("Account successfully disabled. You will now be redirected.");
+                    window.location.href = "/login"; 
+                }
+            }
+        });
+    }
+};
+
 const isEditing = ref(false)
 const toggleEdit = () => {
   if (isEditing.value) saveProfileData() 
@@ -757,13 +773,6 @@ onMounted(fetchProfileData)
              <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                  <h3 class="text-sm font-bold text-gray-900 mb-6 flex items-center gap-2"><Shield class="h-4 w-4 text-gray-500" /> Security Settings</h3>
                  <div class="space-y-6">
-                    <div class="flex items-center justify-between pb-4 border-b border-gray-100">
-                       <div>
-                          <p class="text-sm font-medium text-gray-900">Two-Factor Authentication</p>
-                          <p class="text-xs text-gray-500">Add an extra layer of security</p>
-                       </div>
-                       <button class="px-3 py-1.5 rounded-md border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50">Enable</button>
-                    </div>
                      <div class="flex items-center justify-between pb-4 border-b border-gray-100">
                        <div>
                           <p class="text-sm font-medium text-gray-900">Change Password</p>
@@ -771,13 +780,21 @@ onMounted(fetchProfileData)
                        </div>
                        <button class="px-3 py-1.5 rounded-md border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50">Change</button>
                     </div>
-                     <div class="flex items-center justify-between">
-                       <div>
-                          <p class="text-sm font-medium text-red-600">Delete Account</p>
-                          <p class="text-xs text-gray-500">Permanently delete your account</p>
-                       </div>
-                       <button class="px-3 py-1.5 rounded-md bg-red-600 text-xs font-medium text-white hover:bg-red-700">Delete</button>
-                    </div>
+                     <div class="flex items-center justify-between border-t border-red-100 pt-4 mt-4">
+                     <div>
+                        <p class="text-sm font-semibold text-red-600">Delete Account</p>
+                        <p class="text-xs text-gray-500 mt-1">
+                           Permanently disable your portal access and supplier profile.
+                        </p>
+                     </div>
+                     <button 
+                        @click="confirmDeletion"
+                        :disabled="isDeleting"
+                        class="px-4 py-2 rounded-md bg-red-600 text-xs font-bold text-white hover:bg-red-700 transition-colors disabled:bg-red-400"
+                     >
+                        {{ isDeleting ? 'Processing...' : 'Delete Account' }}
+                     </button>
+                  </div>
                  </div>
              </div>
          </div>
