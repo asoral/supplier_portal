@@ -232,10 +232,22 @@ const profileParams = computed(() => ({
 
 const memberSince = computed(() => {
     const rawDate = profileData.value?.creation;
-    if (!rawDate) return '...';
-    return new Date(rawDate.replace(' ', 'T')).toLocaleDateString('en-IN', {
-        day: '2-digit', month: 'short', year: 'numeric'
-    });
+    console.log("--------------rawDate",rawDate)
+    if (!rawDate) return 'Loading...';
+
+    try {
+        const formattedDate = rawDate.replace(' ', 'T');
+        const dateObj = new Date(formattedDate);
+        
+        return dateObj.toLocaleDateString('en-IN', {
+            day: '2-digit', 
+            month: 'short', 
+            year: 'numeric'
+        });
+    } catch (e) {
+        console.error("Date formatting failed:", e);
+        return 'Invalid Date';
+    }
 });
 
 const profileCompletion = computed(() => {
@@ -576,15 +588,20 @@ onMounted(fetchProfileData)
                         <input type="email" v-model="formData.contactEmail" :disabled="!isEditing" :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all" />
                      </div>
                      <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                       <div v-if="profileData"> <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
                         <input 
                            type="text" 
-                           v-model="profileData.address.phone" 
-                           :disabled="!isEditing" 
+                           v-model="profileData.phone"  :disabled="!isEditing" 
                            :class="[!isEditing ? 'bg-gray-50 ring-gray-200' : 'bg-white ring-indigo-600 ring-2']" 
                            class="block w-full rounded-md border-0 py-2 text-gray-900 ring-1 ring-inset sm:text-sm sm:leading-6 transition-all" 
                            placeholder="No office phone set"
-                     />
+                        />
+                     </div>
+
+                     <div v-else class="animate-pulse">
+                        <div class="h-4 bg-gray-200 rounded w-1/4 mb-2"></div>
+                        <div class="h-10 bg-gray-100 rounded w-full"></div>
+                     </div>
                      </div>
                      <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Website</label>
