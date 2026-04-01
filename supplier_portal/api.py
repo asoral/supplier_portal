@@ -1561,15 +1561,14 @@ def create_portal_notification(alert_doc):
         "for_user": frappe.session.user,           
         "title": _("Alert Created"),               
         "type": "Alert",                           
-        "message": _("We will notify you about tenders in {0}").format(alert_doc.categories),
-        "read": 0                                 
+        "message": _("We will notify you about tenders in {0}").format(alert_doc.categories),                                 
     }).insert(ignore_permissions=True)
 
 @frappe.whitelist()
 def get_my_notifications():
     notifications = frappe.get_all("Supplier Portal Notification",
         filters={"for_user": frappe.session.user},
-        fields=["name", "title", "message", "type", "read", "creation"],
+        fields=["name", "title", "message", "type", "creation"],
         order_by="creation desc",
         limit=10
     )
