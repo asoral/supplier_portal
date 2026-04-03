@@ -10,6 +10,7 @@
     "copy-html-entry": "cp ../supplier_portal/public/supplier-portal/index.html ../supplier_portal/www/supplier-portal.html"
   },
   "dependencies": {
+    "@heroicons/vue": "^2.2.0",
     "autoprefixer": "^10.4.21",
     "axios": "^1.12.2",
     "frappe-ui": "^0.1.201",

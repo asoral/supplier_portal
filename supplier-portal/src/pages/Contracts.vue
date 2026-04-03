@@ -5,7 +5,12 @@ import {
   CheckCircle, Download, Search, Filter, Loader2, ArrowLeft, Printer, MessageSquare, ExternalLink, Calendar, CreditCard, Box
 } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
-
+import { 
+  BuildingOfficeIcon, 
+  PhoneIcon, 
+  EnvelopeIcon, 
+  MapPinIcon 
+} from '@heroicons/vue/24/outline'
 const authStore = useAuthStore()
 const activeTab = ref('All Contracts')
 const searchQuery = ref('')
@@ -236,25 +241,48 @@ const fetchContracts = async (sId) => {
             ["blanket_order_type", "=", "Purchasing"],
             ["supplier", "=", sId],
             ["docstatus", "!=", 2]
-        ])
+        ]);
+        
         const response = await authStore.secureFetch(
-          `/api/resource/Blanket Order?filters=${filters}&fields=["*"]`
-        )
-        const result = await response.json()
+          `/api/resource/Blanket Order?filters=${encodeURIComponent(filters)}&fields=["*"]`
+        );
+        const result = await response.json();
         
         if (result.data) {
-            contracts.value = result.data.map(doc => {
-                const totalQty = doc.items?.reduce((sum, item) => sum + (item.qty || 0), 0) || 0;
-                const orderedQty = doc.items?.reduce((sum, item) => sum + (item.ordered_qty || 0), 0) || 0;
+            contracts.value = await Promise.all(result.data.map(async (doc) => {
                 const items = doc.items || [];
-                console.log("-----------------------items",items)
-                const totalItemsCount = items.length; 
-                const totalValue = doc.items?.reduce((sum, item) => sum + ((item.qty || 0) * (item.rate || 0)), 0) || 0;
-                console.log("------------------------totalValue",totalValue)
-                
-                const deliveryCount = items.filter(item => 
-                    item.ordered_qty >= item.qty && item.qty > 0
-                ).length;
+                const totalValue = items.reduce((sum, item) => sum + ((item.qty || 0) * (item.rate || 0)), 0);
+                const orderedQty = items.reduce((sum, item) => sum + (item.ordered_qty || 0), 0);
+                const rfqId = doc.custom_rfq_reference || doc.tender_id; 
+
+                // Initialize with default data
+                let buyerInfo = {
+                    name: doc.company,
+                    division: 'Procurement',
+                    phone: '',
+                    email: '',
+                    address: 'Pune, Maharashtra' 
+                };
+
+                try {
+                    const contactRes = await authStore.secureFetch(
+                        `/api/method/supplier_portal.api.get_supplier_contact_details?supplier=${doc.supplier}`
+                    );
+                    const contactJson = await contactRes.json();
+                    
+                    if (contactJson.message && Object.keys(contactJson.message).length > 0) {
+                        const c = contactJson.message; // Define 'c' here!
+                        buyerInfo = {
+                            name: c.company_name || doc.company,
+                            division: c.designation,
+                            phone: c.mobile_no || '',
+                            email: c.email_id || '',
+                            address: 'Pune, Maharashtra' 
+                        };
+                    }
+                } catch (err) {
+                    console.warn(`Could not load supplier contact for: ${doc.supplier}`);
+                }
 
                 return {
                     id: doc.order_no || doc.name,
@@ -264,31 +292,19 @@ const fetchContracts = async (sId) => {
                     value: doc.custom_total_inr || totalValue || 0,
                     deliveryDate: doc.to_date,
                     deliveredItems: orderedQty,
-                    items: doc.items || [],
-                    totalItems: totalQty,
+                    items: items,
+                    totalItems: items.length,
                     status: doc.docstatus === 1 ? 'Active' : 'Pending',
                     progress: doc.custom_delivery_ ? Math.round(doc.custom_delivery_) : 0,
-                    deliveryCount: deliveryCount, 
-                    totalItems: totalItemsCount,
-                    amountReceived: 0,
-                    paymentProgress: 0,
-                    tenderId: doc.tender_id || 'TND-2024-005',
-                    paymentTerms: doc.payment_terms_template || '30 days from delivery',
-                    buyer: {
-                        name: doc.company || 'Tata Steel Limited',
-                        division: 'Procurement - Safety Division',
-                        phone: '+91 657 242 5000',
-                        email: 'procurement.safety@tatasteel.com',
-                        address: 'Jamshedpur, Jharkhand 831001'
-                    }
-                }
-            })
+                    tenderId: rfqId || 'N/A',
+                    buyer: buyerInfo 
+                };
+            }));
         }
     } catch (e) {
-        console.error("Contracts Sync Error:", e)
+        console.error("Contracts Sync Error:", e);
     }
-}
-
+};
 
 const closeDetail = () => {
   selectedContract.value = null
@@ -505,11 +521,6 @@ onMounted(async () => {
             <Download class="w-4 h-4" /> 
             <span>Download PO</span>
           </button>
-
-          <button class="inline-flex items-center gap-2 bg-indigo-600 px-4 py-2 rounded-lg text-white text-sm font-semibold shadow-sm hover:bg-indigo-700 transition-colors">
-            <MessageSquare class="w-4 h-4" /> 
-            <span>Contact Buyer</span>
-          </button>
         </div>
       </div>
 
@@ -583,19 +594,48 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-          <div class="flex items-center gap-2 mb-6 text-gray-900 font-bold"><UserCircle class="w-5 h-5" /> Buyer Information</div>
-          <div class="mb-4">
-            <h3 class="text-lg font-bold text-gray-900">{{ selectedContract.buyer.name }}</h3>
-            <p class="text-sm text-gray-500">{{ selectedContract.buyer.division }}</p>
-          </div>
-          <div class="space-y-3 text-sm text-gray-600">
-            <p>{{ selectedContract.buyer.phone }}</p>
-            <p>{{ selectedContract.buyer.email }}</p>
-            <p>{{ selectedContract.buyer.address }}</p>
-          </div>
-          <button class="mt-6 w-full py-2.5 rounded-lg border border-gray-200 text-sm font-semibold hover:bg-gray-50 transition-colors">Send Message</button>
-        </div>
+       <div v-if="selectedContract && selectedContract.buyer" class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+  <div class="flex items-center gap-2 mb-4">
+    <BuildingOfficeIcon class="w-5 h-5 text-gray-500" />
+    <h2 class="text-lg font-bold text-gray-900">Buyer Information</h2>
+  </div>
+
+  <div class="mb-6">
+    <h3 class="text-xl font-extrabold text-gray-900">{{ selectedContract.buyer.name }}</h3>
+    <p class="text-gray-500 font-medium">{{ selectedContract.buyer.division }}</p>
+  </div>
+
+  <div class="space-y-4">
+    <div class="flex items-center gap-3 text-gray-600">
+      <PhoneIcon class="w-5 h-5 text-gray-400" />
+      <a 
+        :href="`tel:${selectedContract.buyer.phone}`" 
+        class="text-sm font-semibold transition-colors duration-200 hover:text-indigo-600 hover:underline decoration-indigo-400 decoration-2 underline-offset-4"
+      >
+        {{ selectedContract.buyer.phone }}
+      </a>
+    </div>
+
+    <div class="flex items-center gap-3 text-gray-600">
+      <EnvelopeIcon class="w-5 h-5 text-gray-400" />
+      <a 
+        :href="`mailto:${selectedContract.buyer.email}`" 
+        class="text-sm font-semibold transition-colors duration-200 hover:text-indigo-600 hover:underline decoration-indigo-400 decoration-2 underline-offset-4"
+      >
+        {{ selectedContract.buyer.email }}
+      </a>
+    </div>
+
+    <div class="flex items-center gap-3 text-gray-600">
+      <MapPinIcon class="w-5 h-5 text-gray-400" />
+      <span class="text-sm font-semibold">{{ selectedContract.buyer.address }}</span>
+    </div>
+  </div>
+</div>
+
+<div v-else class="p-6 text-center text-gray-400 italic">
+  Loading buyer information...
+</div>
       </div>
 
       <div v-if="activeDetailTab === 'Line Items'" class="animate-in fade-in duration-500">
