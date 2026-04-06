@@ -102,12 +102,11 @@ const toggleMenu = () => {
 const handleLogout = () => {
   authStore.logout();
   localStorage.clear();
-  sessionStorage.clear();
-  
-  isProfileOpen.value = false;
+  sessionStorage.clear();  
+  isProfileOpen.value = false
 
-  const portalHome = '/supplier-portal/';
-  window.location.href = `/logout?redirect_to=${portalHome}`;
+  const portalHome = 'supplier-portal'; 
+    window.location.href = `/logout?redirect_to=/${portalHome}`;
 }
 
 </script>
