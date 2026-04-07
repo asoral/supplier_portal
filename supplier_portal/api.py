@@ -1579,6 +1579,48 @@ def get_my_notifications():
     return notifications
 
 @frappe.whitelist()
+def get_buyer_contact_details(company):
+    contact_name = frappe.db.get_value("Contact", 
+        {"link_doctype": "Company", "link_name": company, "is_primary_contact": 1}, 
+        "name")
+    
+    # Fallback: search without is_primary_contact filter
+    if not contact_name:
+        contact_name = frappe.db.get_value("Contact", 
+            {"link_doctype": "Company", "link_name": company}, 
+            "name")
+    
+    if not contact_name:
+        return {}
+
+    contact_doc = frappe.get_doc("Contact", contact_name)
+    
+    phone_number = ""
+    if contact_doc.phone_nos:
+        for p in contact_doc.phone_nos:
+            if p.is_primary_mobile_no or p.is_primary_phone:
+                phone_number = p.phone
+                break
+        if not phone_number:
+            phone_number = contact_doc.phone_nos[0].phone
+
+    email_id = ""
+    if contact_doc.email_ids:
+        for e in contact_doc.email_ids:
+            if e.is_primary:
+                email_id = e.email_id
+                break
+        if not email_id:
+            email_id = contact_doc.email_ids[0].email_id
+
+    return {
+        "company_name": company,
+        "designation": contact_doc.designation or "Procurement",
+        "mobile_no": phone_number,
+        "email_id": email_id
+    }
+
+@frappe.whitelist()
 def delete_portal_account():
     user = frappe.session.user
     

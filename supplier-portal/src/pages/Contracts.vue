@@ -253,35 +253,35 @@ const fetchContracts = async (sId) => {
                 const items = doc.items || [];
                 const totalValue = items.reduce((sum, item) => sum + ((item.qty || 0) * (item.rate || 0)), 0);
                 const orderedQty = items.reduce((sum, item) => sum + (item.ordered_qty || 0), 0);
-                const rfqId = doc.custom_rfq_reference || doc.tender_id; 
+                const rfqId = doc.custom_rfq_reference || doc.tender_id;
 
-                // Initialize with default data
+                // Initialize with default buyer info
                 let buyerInfo = {
                     name: doc.company,
                     division: 'Procurement',
                     phone: '',
                     email: '',
-                    address: 'Pune, Maharashtra' 
+                    address: 'Pune, Maharashtra'
                 };
 
                 try {
                     const contactRes = await authStore.secureFetch(
-                        `/api/method/supplier_portal.api.get_supplier_contact_details?supplier=${doc.supplier}`
+                        `/api/method/supplier_portal.api.get_buyer_contact_details?company=${encodeURIComponent(doc.company)}`
                     );
                     const contactJson = await contactRes.json();
-                    
-                    if (contactJson.message && Object.keys(contactJson.message).length > 0) {
-                        const c = contactJson.message; // Define 'c' here!
+                    const msg = contactJson.message;
+
+                    if (msg && Object.keys(msg).length > 0) {
                         buyerInfo = {
-                            name: c.company_name || doc.company,
-                            division: c.designation,
-                            phone: c.mobile_no || '',
-                            email: c.email_id || '',
-                            address: 'Pune, Maharashtra' 
+                            name: msg.company_name || doc.company,
+                            division: msg.designation || 'Procurement',
+                            phone: msg.mobile_no || '',
+                            email: msg.email_id || '',
+                            address: 'Pune, Maharashtra'
                         };
                     }
                 } catch (err) {
-                    console.warn(`Could not load supplier contact for: ${doc.supplier}`);
+                    console.warn(`Could not load buyer contact for: ${doc.company}`);
                 }
 
                 return {
@@ -297,7 +297,7 @@ const fetchContracts = async (sId) => {
                     status: doc.docstatus === 1 ? 'Active' : 'Pending',
                     progress: doc.custom_delivery_ ? Math.round(doc.custom_delivery_) : 0,
                     tenderId: rfqId || 'N/A',
-                    buyer: buyerInfo 
+                    buyer: buyerInfo
                 };
             }));
         }
